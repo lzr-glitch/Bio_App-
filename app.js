@@ -184,29 +184,158 @@ function generateSampleFlashcards() {
 }
 
 function generateSampleQuestions() {
-  const chapters = ['Génétique', 'Photosynthèse', 'Cellule', 'Écologie', 'Évolution'];
-  const themes = ['Hérédité', 'Cycle de Calvin', 'Membrane', 'Population', 'Sélection'];
-  const answers = ['ADN', 'Glucose', 'Protéines intégrales', 'Oxygène', 'Sélection naturelle'];
-  const options = [
-    ['ADN', 'ARN', 'Protéine', 'Glucose'],
-    ['Oxygène', 'Glucose', 'ATP', 'Eau'],
-    ['Protéines intégrales', 'ADN', 'Ribosomes', 'Paroi cellulaire'],
-    ['Coeur', 'Poumons', 'Reins', 'Foie'],
-    ['Migration', 'Mutation', 'Sélection naturelle', 'Dissolution']
+  const templates = [
+    {
+      chapter: 'Génétique',
+      theme: 'ADN',
+      question: 'Quelle molécule porte l’information génétique dans une cellule ?',
+      options: ['ADN', 'ARN', 'Glucose', 'Lipides'],
+      answer: 'ADN'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Hérédité',
+      question: 'Quel type d’acide nucléique sert de modèle pour la traduction en protéines ?',
+      options: ['ARNm', 'ADN', 'ARNt', 'ATP'],
+      answer: 'ARNm'
+    },
+    {
+      chapter: 'Photosynthèse',
+      theme: 'Cycle de Calvin',
+      question: 'Quel est le produit principal du cycle de Calvin ?',
+      options: ['Glucose', 'Oxygène', 'NADPH', 'CO2'],
+      answer: 'Glucose'
+    },
+    {
+      chapter: 'Photosynthèse',
+      theme: 'Lumière',
+      question: 'Quelle molécule absorbe la lumière dans les chloroplastes ?',
+      options: ['Chlorophylle', 'Cellulose', 'Protéine', 'Amidon'],
+      answer: 'Chlorophylle'
+    },
+    {
+      chapter: 'Cellule',
+      theme: 'Membrane',
+      question: 'Quel composant assure la perméabilité sélective de la membrane plasmique ?',
+      options: ['Protéines intégrales', 'Cellulose', 'ADN', 'Glucose'],
+      answer: 'Protéines intégrales'
+    },
+    {
+      chapter: 'Cellule',
+      theme: 'Mitochondrie',
+      question: 'Quel organite produit principalement de l’ATP ?',
+      options: ['Mitochondrie', 'Noyau', 'Ribosome', 'Chloroplaste'],
+      answer: 'Mitochondrie'
+    },
+    {
+      chapter: 'Écologie',
+      theme: 'Écosystèmes',
+      question: 'Comment appelle-t-on l’ensemble des organismes et de leur environnement ?',
+      options: ['Écosystème', 'Population', 'Communauté', 'Biome'],
+      answer: 'Écosystème'
+    },
+    {
+      chapter: 'Écologie',
+      theme: 'Cycle',
+      question: 'Quel cycle décrit le passage de l’eau entre atmosphère, sol et organismes ?',
+      options: ['Cycle de l’eau', 'Cycle du carbone', 'Cycle de l’azote', 'Cycle du phosphore'],
+      answer: 'Cycle de l’eau'
+    },
+    {
+      chapter: 'Évolution',
+      theme: 'Sélection naturelle',
+      question: 'Quel mécanisme sélectionne les traits les mieux adaptés ?',
+      options: ['Sélection naturelle', 'Mutation aléatoire', 'Migration', 'Spéciation'],
+      answer: 'Sélection naturelle'
+    },
+    {
+      chapter: 'Évolution',
+      theme: 'Variation',
+      question: 'Quelle source de variation génétique est produite lors de la méiose ?',
+      options: ['Recombinaison génétique', 'Mitose', 'Transcription', 'Traduction'],
+      answer: 'Recombinaison génétique'
+    },
+    {
+      chapter: 'Écologie',
+      theme: 'Niche',
+      question: 'Comment appelle-t-on le rôle fonctionnel d’une espèce dans son milieu ?',
+      options: ['Niche écologique', 'Habitat', 'Population', 'Biome'],
+      answer: 'Niche écologique'
+    },
+    {
+      chapter: 'Cellule',
+      theme: 'Division',
+      question: 'Quel processus produit deux cellules filles identiques ?',
+      options: ['Mitose', 'Meiose', 'Fécondation', 'Diffusion'],
+      answer: 'Mitose'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Expression',
+      question: 'Quel codon de l’ARNm signale le début de la traduction ?',
+      options: ['AUG', 'UAA', 'UAG', 'UGA'],
+      answer: 'AUG'
+    },
+    {
+      chapter: 'Photosynthèse',
+      theme: 'Chloroplaste',
+      question: 'Quel pigment donne aux feuilles leur couleur verte ?',
+      options: ['Chlorophylle', 'Carotène', 'Xanthophylle', 'Anthocyane'],
+      answer: 'Chlorophylle'
+    },
+    {
+      chapter: 'Écologie',
+      theme: 'Réseau trophique',
+      question: 'Quel organisme est un consommateur primaire ?',
+      options: ['Herbivore', 'Carnivore', 'Décomposeur', 'Producteur'],
+      answer: 'Herbivore'
+    },
+    {
+      chapter: 'Cellule',
+      theme: 'Ribosome',
+      question: 'Quel organite assemble les acides aminés pour former des protéines ?',
+      options: ['Ribosome', 'Mitochondrie', 'Noyau', 'Chloroplaste'],
+      answer: 'Ribosome'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Mutation',
+      question: 'Quel type de mutation modifie un seul nucléotide ?',
+      options: ['Mutation ponctuelle', 'Délétion', 'Duplication', 'Inversion'],
+      answer: 'Mutation ponctuelle'
+    },
+    {
+      chapter: 'Photosynthèse',
+      theme: 'Respiration',
+      question: 'Quel gaz est consommé pendant la photosynthèse ?',
+      options: ['CO2', 'O2', 'N2', 'CH4'],
+      answer: 'CO2'
+    },
+    {
+      chapter: 'Écologie',
+      theme: 'Biodiversité',
+      question: 'Qu’est-ce que la biodiversité ?',
+      options: ['La diversité des espèces', 'La teneur en eau', 'La richesse minérale', 'La température'],
+      answer: 'La diversité des espèces'
+    },
+    {
+      chapter: 'Évolution',
+      theme: 'Adaptation',
+      question: 'Quelle évolution survient quand une espèce s’adapte mieux à son milieu ?',
+      options: ['Adaptation', 'Migration', 'Dérive génétique', 'Spéciation'],
+      answer: 'Adaptation'
+    }
   ];
   const questions = [];
   for (let i = 0; i < 100; i += 1) {
-    const chapter = chapters[i % chapters.length];
-    const theme = themes[i % themes.length];
-    const answer = answers[i % answers.length];
-    const questionText = `Question ${i + 1} : Quelle est la bonne réponse pour ${chapter} ?`;
+    const template = templates[i % templates.length];
     questions.push({
       id: `q-${i}`,
-      chapter,
-      theme,
-      question: questionText,
-      options: options[i % options.length],
-      answer,
+      chapter: template.chapter,
+      theme: template.theme,
+      question: `Question ${i + 1} : ${template.question}`,
+      options: template.options,
+      answer: template.answer,
       source: 'IBO'
     });
   }
