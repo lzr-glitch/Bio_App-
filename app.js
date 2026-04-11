@@ -1,6 +1,6 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
 const TODAY = new Date().toISOString().slice(0, 10);
-const pages = ['home','reading','flashcards','library','test','quiz','profile','stats','chapter','weaknesses','badges','recap','settings'];
+const pages = ['home','reading','flashcards','library','test','quiz','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 const defaultState = {
   currentUser: null,
@@ -117,6 +117,12 @@ const weeklyRecap = document.getElementById('weekly-recap');
 const clearData = document.getElementById('clear-data');
 const themeToggle = document.getElementById('theme-toggle');
 const settingsButton = document.getElementById('settings-button');
+const showIbAnnales = document.getElementById('show-ib-annales');
+const monthlyQuickButton = document.getElementById('start-monthly-quick');
+const viewMyStats = document.getElementById('view-my-stats');
+const viewMyBadges = document.getElementById('view-my-badges');
+const viewOtherStats = document.getElementById('view-other-stats');
+const viewOtherBadges = document.getElementById('view-other-badges');
 
 let timerInterval = null;
 let timerSeconds = 0;
@@ -437,18 +443,32 @@ function showSection(id) {
   });
 }
 
-function goToPage(page) {
+function goToPage(page, preserveTarget = false) {
   if (page === 'home') showSection('home');
   else if (page === 'profile') showSection('profile');
-  else if (page === 'stats') showSection('stats');
-  else if (page === 'chapter') showSection('chapter');
-  else if (page === 'badges') showSection('badges');
-  else if (page === 'weaknesses') showSection('weaknesses');
+  else if (page === 'stats') {
+    if (!preserveTarget) statsTarget = null;
+    showSection('stats');
+  } else if (page === 'chapter' || page === 'chapters') showSection('chapters');
+  else if (page === 'badges') {
+    if (!preserveTarget) badgesTarget = null;
+    showSection('badges');
+  } else if (page === 'weaknesses') showSection('weaknesses');
   else if (page === 'recap') showSection('recap');
   else if (page === 'settings') showSection('settings');
   else showSection(page);
+  applyPageTheme(page);
   if (page === 'library') {
     markOtherCardsSeen();
+  }
+}
+
+function applyPageTheme(page) {
+  document.body.classList.remove('theme-blue', 'theme-default');
+  if (page === 'test') {
+    document.body.classList.add('theme-blue');
+  } else {
+    document.body.classList.add('theme-default');
   }
 }
 
@@ -584,6 +604,18 @@ function renderProfile() {
   otherTotalReading.textContent = `${Object.values(other.reading).reduce((sum, v) => sum + v, 0)} min`;
 }
 
+function showProfileStats(userKey) {
+  statsTarget = userKey;
+  renderStats();
+  goToPage('stats', true);
+}
+
+function showProfileBadges(userKey) {
+  badgesTarget = userKey;
+  renderBadges();
+  goToPage('badges', true);
+}
+
 function computeStats(user) {
   const weekDays = getLastDays(7);
   const weekCards = user.flashcards.filter(card => weekDays.includes(card.date)).length;
@@ -593,11 +625,15 @@ function computeStats(user) {
   return { weekCards, successRate };
 }
 
+let statsTarget = null;
+let badgesTarget = null;
+
 function renderStats() {
+  const targetUser = statsTarget ? getUser(statsTarget) : getUser(state.currentUser);
+  document.querySelector('#page-stats h2').textContent = `Statistiques de ${targetUser.name}`;
   statsCharts.innerHTML = '';
   const days = getLastDays(7).reverse();
-  const me = getUser(state.currentUser);
-  const other = getUser(getOtherUserId());
+  const me = targetUser;
   days.forEach(day => {
     const readingCount = me.reading[day] || 0;
     const cardCount = me.flashcards.filter(card => card.date === day).length;
@@ -653,8 +689,10 @@ function gatherWeakTags(user) {
 }
 
 function renderBadges() {
+  const targetUser = badgesTarget ? getUser(badgesTarget) : getUser(state.currentUser);
+  document.querySelector('#page-badges h2').textContent = `Badges de ${targetUser.name}`;
   badgeList.innerHTML = '';
-  const user = getUser(state.currentUser);
+  const user = targetUser;
   const badges = [
     { label: '7 jours de streak', earned: state.streak >= 7 },
     { label: '30 flashcards créées', earned: user.flashcards.length >= 30 },
@@ -919,6 +957,10 @@ function startQuizSession() {
   });
 }
 
+function showIBAnnales() {
+  importAnnalesInput.click();
+}
+
 function pickRandomQuestion() {
   if (!state.questionBank || state.questionBank.length === 0) return null;
   return state.questionBank[Math.floor(Math.random() * state.questionBank.length)];
@@ -1061,6 +1103,15 @@ function attachHandlers() {
   document.querySelectorAll('[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => goToPage(btn.dataset.nav));
   });
+  showIbAnnales.addEventListener('click', showIBAnnales);
+  monthlyQuickButton.addEventListener('click', startMonthlyTest);
+  importAnnalesInput.addEventListener('change', () => {
+    if (importAnnalesInput.files.length) importAnnales();
+  });
+  viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
+  viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
+  viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
+  viewOtherBadges.addEventListener('click', () => showProfileBadges(getOtherUserId()));
   timerStart.addEventListener('click', startTimer);
   timerPause.addEventListener('click', pauseTimer);
   timerStop.addEventListener('click', stopTimer);

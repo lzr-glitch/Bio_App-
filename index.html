@@ -6,7 +6,7 @@
   <title>Revisio IBO</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
-  <meta name="theme-color" content="#d9e5d5" />
+  <meta name="theme-color" content="#07120d" />
 </head>
 <body>
   <div id="app">
@@ -190,8 +190,12 @@
           <button class="back-button" data-nav="home">← Retour</button>
           <h2>Quiz IBO</h2>
         </div>
-        <div class="card small-card">
-          <button class="primary-button" id="start-quiz">Lancer un mini quiz</button>
+        <div class="card small-card quiz-actions-card">
+          <div class="quiz-actions-row">
+            <button class="primary-button theme-blue" id="start-quiz">Mini quiz</button>
+            <button class="secondary-button theme-blue" id="show-ib-annales">Annales IBO</button>
+            <button class="primary-button theme-orange" id="start-monthly-quick">Test mensuel</button>
+          </div>
         </div>
         <div class="card small-card import-card">
           <label>Importer annales depuis un fichier JSON</label>
@@ -243,6 +247,10 @@
             <div class="profile-item"><span>Tests totaux</span><strong id="my-total-tests">0</strong></div>
             <div class="profile-item"><span>Quiz totaux</span><strong id="my-total-quizzes">0</strong></div>
             <div class="profile-item"><span>Lecture totale</span><strong id="my-total-reading">0 min</strong></div>
+          <div class="profile-actions">
+            <button class="secondary-button" id="view-my-stats">Voir mes stats</button>
+            <button class="secondary-button" id="view-my-badges">Voir mes badges</button>
+          </div>
           </div>
           <div class="profile-block">
             <h3>Autre</h3>
@@ -252,6 +260,10 @@
             <div class="profile-item"><span>Tests totaux</span><strong id="other-total-tests">0</strong></div>
             <div class="profile-item"><span>Quiz totaux</span><strong id="other-total-quizzes">0</strong></div>
             <div class="profile-item"><span>Lecture totale</span><strong id="other-total-reading">0 min</strong></div>
+            <div class="profile-actions">
+              <button class="secondary-button" id="view-other-stats">Voir ses stats</button>
+              <button class="secondary-button" id="view-other-badges">Voir ses badges</button>
+            </div>
           </div>
         </div>
       </section>
@@ -321,9 +333,7 @@
   <nav class="tabbar bottom-nav" aria-label="Navigation principale">
     <button class="tab-button active" data-nav="home" aria-label="Accueil"><img class="tab-icon" src="images/nav-home.svg" alt="Accueil" /><span class="visually-hidden">Accueil</span></button>
     <button class="tab-button" data-nav="profile" aria-label="Profil"><img class="tab-icon" src="images/nav-profile.svg" alt="Profil" /><span class="visually-hidden">Profil</span></button>
-    <button class="tab-button" data-nav="stats" aria-label="Stats"><img class="tab-icon" src="images/nav-stats.svg" alt="Stats" /><span class="visually-hidden">Stats</span></button>
     <button class="tab-button" data-nav="chapter" aria-label="Chapitres"><img class="tab-icon" src="images/nav-chapter.svg" alt="Chapitres" /><span class="visually-hidden">Chapitres</span></button>
-    <button class="tab-button" data-nav="badges" aria-label="Badges"><img class="tab-icon" src="images/nav-badges.svg" alt="Badges" /><span class="visually-hidden">Badges</span></button>
   </nav>
 
   <script src="app.js"></script>
