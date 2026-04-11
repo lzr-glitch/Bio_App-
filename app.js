@@ -6,6 +6,7 @@ const defaultState = {
   currentUser: null,
   streak: 0,
   pending: false,
+  theme: 'light',
   lastUpdate: TODAY,
   lastMonth: new Date().toISOString().slice(0, 7),
   jokers: 0,
@@ -114,6 +115,7 @@ const weaknessList = document.getElementById('weakness-list');
 const badgeList = document.getElementById('badge-list');
 const weeklyRecap = document.getElementById('weekly-recap');
 const clearData = document.getElementById('clear-data');
+const themeToggle = document.getElementById('theme-toggle');
 const settingsButton = document.getElementById('settings-button');
 
 let timerInterval = null;
@@ -1085,7 +1087,20 @@ function attachHandlers() {
   finishMonthly.addEventListener('click', finishMonthlyReview);
   clearData.addEventListener('click', resetAppData);
   settingsButton.addEventListener('click', () => goToPage('settings'));
+  themeToggle.addEventListener('click', toggleTheme);
   document.querySelectorAll('.tab-button').forEach(btn => btn.addEventListener('click', () => goToPage(btn.dataset.nav)));
+}
+
+function applyTheme() {
+  const isDark = state.theme === 'dark';
+  document.body.classList.toggle('dark-mode', isDark);
+  themeToggle.textContent = isDark ? 'Retour au mode clair' : 'Passer en mode sombre';
+}
+
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  applyTheme();
+  saveState();
 }
 
 function initUserDaily() {
@@ -1101,6 +1116,7 @@ function init() {
   checkDayTransition();
   renderQuizStatus();
   attachHandlers();
+  applyTheme();
   if (state.currentUser) {
     initUserDaily();
     renderApp();

@@ -18,6 +18,24 @@
   --shadow: 0 18px 36px rgba(31, 60, 35, 0.10);
 }
 
+body.dark-mode {
+  --bg: #07120d;
+  --surface: #0f1d14;
+  --surface-soft: #16261a;
+  --surface-strong: #203222;
+  --text: #e9f6e9;
+  --muted: #9db7a5;
+  --primary: #58cc02;
+  --primary-dark: #c5ff9f;
+  --accent: #6fb8ff;
+  --accent-soft: #1b3848;
+  --danger: #f77f7d;
+  --success: #70cc81;
+  --warning: #f6bf40;
+  --border: rgba(88, 204, 2, 0.18);
+  --shadow: 0 18px 36px rgba(0, 0, 0, 0.25);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -200,7 +218,7 @@ button, input, textarea, select {
   align-items: center;
   padding: 10px 16px;
   border-radius: 999px;
-  background: #f5fff0;
+  background: var(--surface-soft);
   color: var(--primary-dark);
   font-size: 0.95rem;
   font-weight: 600;
@@ -215,7 +233,7 @@ button, input, textarea, select {
   text-align: center;
   padding: 32px 24px;
   border-radius: 34px;
-  background: #f7fff3;
+  background: var(--surface-soft);
   border: 1px solid rgba(79, 167, 124, 0.18);
 }
 
@@ -295,7 +313,7 @@ button, input, textarea, select {
 
 .summary-card {
   border: none;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid rgba(79, 167, 124, 0.12);
 }
 
@@ -310,7 +328,7 @@ button, input, textarea, select {
   gap: 14px;
   align-items: center;
   border: none;
-  background: #f6fef0;
+  background: var(--surface-soft);
   box-shadow: 0 18px 48px rgba(79, 167, 124, 0.12);
 }
 
@@ -351,13 +369,13 @@ button, input, textarea, select {
   bottom: 0;
   width: min(980px, 100%);
   margin: 0 auto;
-  background: #ffffff;
+  background: var(--surface);
   border-top: 1px solid rgba(79, 167, 124, 0.14);
   z-index: 200;
 }
 
 .tab-button {
-  background: #f8fff6;
+  background: var(--surface-soft);
   padding: 12px 0;
   color: var(--primary-dark);
   border-radius: 22px;
@@ -369,6 +387,11 @@ button, input, textarea, select {
   min-height: 58px;
   gap: 4px;
   font-size: 1.3rem;
+}
+
+.tab-icon {
+  width: 26px;
+  height: 26px;
 }
 
 .tab-button span {
