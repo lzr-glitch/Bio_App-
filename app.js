@@ -1,44 +1,23 @@
-const STORAGE_KEY = 'revisio-ibo-state';
+﻿const STORAGE_KEY = 'revisio-ibo-state';
 const TODAY = new Date().toISOString().slice(0, 10);
-const pages = ['home','reading','flashcards','test','quiz','profile','stats','chapter','weaknesses','badges','recap','settings'];
-const sampleQuestions = [
-  {
-    id: 1,
-    chapter: 'Génétique',
-    theme: 'Hérédité',
-    question: 'Quelle molécule porte l’information génétique ?',
-    options: ['ADN', 'ARN', 'Protéine', 'Glucose'],
-    answer: 'ADN'
-  },
-  {
-    id: 2,
-    chapter: 'Photosynthèse',
-    theme: 'Cycle de Calvin',
-    question: 'Quelle molécule est produite par le cycle de Calvin ?',
-    options: ['Oxygène', 'Glucose', 'ATP', 'Eau'],
-    answer: 'Glucose'
-  },
-  {
-    id: 3,
-    chapter: 'Cellule',
-    theme: 'Membrane',
-    question: 'Quel composant assure la perméabilité sélective de la membrane ?',
-    options: ['Protéines intégrales', 'ADN', 'Ribosomes', 'Paroi cellulaire'],
-    answer: 'Protéines intégrales'
-  }
-];
+const pages = ['home','reading','flashcards','library','test','quiz','profile','stats','chapter','weaknesses','badges','recap','settings'];
 
 const defaultState = {
   currentUser: null,
   streak: 0,
   pending: false,
   lastUpdate: TODAY,
+  lastMonth: new Date().toISOString().slice(0, 7),
   jokers: 0,
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, badges: [] },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, badges: [] }
-  }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [] },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [] }
+  },
+  questionBank: []
 };
+
+const sampleQuestions = generateSampleQuestions();
+const sampleFlashcards = generateSampleFlashcards();
 
 const state = loadState();
 const startScreen = document.getElementById('start-screen');
@@ -47,15 +26,23 @@ const currentUserBadge = document.getElementById('current-user-badge');
 const otherUserBadge = document.getElementById('other-user-badge');
 const streakCount = document.getElementById('streak-count');
 const streakStatus = document.getElementById('streak-status');
+const streakHint = document.getElementById('streak-hint');
 const todayReading = document.getElementById('today-reading');
 const todayFlashcards = document.getElementById('today-flashcards');
 const todayTested = document.getElementById('today-tested');
 const otherProgress = document.getElementById('other-progress');
 const homeNotice = document.getElementById('home-notice');
-const readingHistory = document.getElementById('reading-history');
-const add5min = document.getElementById('add-5min');
+const otherUnseenCount = document.getElementById('other-unseen-count');
+
+const timerDisplay = document.getElementById('timer-display');
+const timerStatus = document.getElementById('timer-status');
+const timerStart = document.getElementById('timer-start');
+const timerPause = document.getElementById('timer-pause');
+const timerStop = document.getElementById('timer-stop');
 const manualMinutes = document.getElementById('manual-minutes');
 const setMinutes = document.getElementById('set-minutes');
+const readingHistory = document.getElementById('reading-history');
+
 const saveCardBtn = document.getElementById('save-card');
 const clearCardBtn = document.getElementById('clear-card');
 const cardQuestion = document.getElementById('card-question');
@@ -64,6 +51,11 @@ const cardTags = document.getElementById('card-tags');
 const cardExplanation = document.getElementById('card-explanation');
 const cardNote = document.getElementById('card-note');
 const todayCardsList = document.getElementById('today-cards-list');
+
+const librarySearch = document.getElementById('library-search');
+const librarySort = document.getElementById('library-sort');
+const libraryList = document.getElementById('library-list');
+
 const reviewCount = document.getElementById('review-count');
 const startReview = document.getElementById('start-review');
 const reviewCard = document.getElementById('review-card');
@@ -71,11 +63,16 @@ const reviewProgress = document.getElementById('review-progress');
 const reviewQuestion = document.getElementById('review-question');
 const reviewAnswer = document.getElementById('review-answer');
 const showAnswer = document.getElementById('show-answer');
-const correctBtn = document.getElementById('correct-btn');
-const wrongBtn = document.getElementById('wrong-btn');
+const easyBtn = document.getElementById('easy-btn');
+const mediumBtn = document.getElementById('medium-btn');
+const hardBtn = document.getElementById('hard-btn');
 const reviewSummary = document.getElementById('review-summary');
 const reviewResults = document.getElementById('review-results');
 const finishReview = document.getElementById('finish-review');
+
+const importAnnalesInput = document.getElementById('import-annales');
+const importButton = document.getElementById('import-button');
+const questionBankCount = document.getElementById('question-bank-count');
 const startQuiz = document.getElementById('start-quiz');
 const quizCard = document.getElementById('quiz-card');
 const quizMeta = document.getElementById('quiz-meta');
@@ -85,47 +82,141 @@ const validateQuiz = document.getElementById('validate-quiz');
 const quizSummary = document.getElementById('quiz-summary');
 const quizResults = document.getElementById('quiz-results');
 const finishQuiz = document.getElementById('finish-quiz');
+
+const startMonthly = document.getElementById('start-monthly');
+const monthlyCard = document.getElementById('monthly-card');
+const monthlyMeta = document.getElementById('monthly-meta');
+const monthlyQuestion = document.getElementById('monthly-question');
+const monthlyOptions = document.getElementById('monthly-options');
+const validateMonthly = document.getElementById('validate-monthly');
+const monthlySummary = document.getElementById('monthly-summary');
+const monthlyResults = document.getElementById('monthly-results');
+const finishMonthly = document.getElementById('finish-monthly');
+
 const myJokers = document.getElementById('my-jokers');
 const myTotalCards = document.getElementById('my-total-cards');
 const myWeekCards = document.getElementById('my-week-cards');
 const myTotalTests = document.getElementById('my-total-tests');
+const myTotalQuizzes = document.getElementById('my-total-quizzes');
 const mySuccessRate = document.getElementById('my-success-rate');
 const myTotalReading = document.getElementById('my-total-reading');
 const otherJokers = document.getElementById('other-jokers');
 const otherTotalCards = document.getElementById('other-total-cards');
 const otherWeekCards = document.getElementById('other-week-cards');
 const otherTotalTests = document.getElementById('other-total-tests');
+const otherTotalQuizzes = document.getElementById('other-total-quizzes');
 const otherSuccessRate = document.getElementById('other-success-rate');
 const otherTotalReading = document.getElementById('other-total-reading');
+
 const statsCharts = document.getElementById('stats-charts');
 const chapterProgress = document.getElementById('chapter-progress');
 const weaknessList = document.getElementById('weakness-list');
 const badgeList = document.getElementById('badge-list');
 const weeklyRecap = document.getElementById('weekly-recap');
 const clearData = document.getElementById('clear-data');
-const resetApp = document.getElementById('reset-app');
+const settingsButton = document.getElementById('settings-button');
 
+let timerInterval = null;
+let timerSeconds = 0;
+let isTimerRunning = false;
 let reviewQueue = [];
 let reviewIndex = 0;
 let reviewCorrect = 0;
 let quizState = null;
+let monthlyState = null;
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return JSON.parse(JSON.stringify(defaultState));
   try {
-    return Object.assign(JSON.parse(JSON.stringify(defaultState)), JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    return deepMerge(JSON.parse(JSON.stringify(defaultState)), parsed);
   } catch (e) {
     return JSON.parse(JSON.stringify(defaultState));
   }
+}
+
+function deepMerge(base, override) {
+  for (const key in override) {
+    if (Array.isArray(override[key])) {
+      base[key] = override[key];
+    } else if (override[key] && typeof override[key] === 'object') {
+      base[key] = deepMerge(base[key] || {}, override[key]);
+    } else {
+      base[key] = override[key];
+    }
+  }
+  return base;
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function formatMinutes(min) {
-  return `${min} min`;
+function generateSampleFlashcards() {
+  const themes = [
+    { chapter: 'Campbell chapitre 1', tag: 'Cellule', question: 'Que contient toute cellule vivante ?', answer: 'ADN', note: 'L’ADN est la base de toute cellule.' },
+    { chapter: 'Campbell chapitre 2', tag: 'Membrane', question: 'Quel rôle joue la membrane plasmique ?', answer: 'Contrôle des échanges', note: 'Elle régule ce qui entre et sort.' },
+    { chapter: 'Campbell chapitre 6', tag: 'Photosynthèse', question: 'Quel est le produit principal de la photosynthèse ?', answer: 'Glucose', note: 'Le glucose est stocké et utilisé comme énergie.' },
+    { chapter: 'Campbell chapitre 9', tag: 'Génétique', question: 'Quelle molécule est transcrite en ARN ?', answer: 'ADN', note: 'L’ARN copie l’information de l’ADN.' },
+    { chapter: 'IBO 2023', tag: 'Écologie', question: 'Qu’est-ce qu’une niche écologique ?', answer: 'La fonction d’une espèce', note: 'C’est le rôle exact de l’espèce dans l’écosystème.' }
+  ];
+  const cards = [];
+  for (let i = 0; i < 100; i += 1) {
+    const source = themes[i % themes.length];
+    const owner = i % 2 === 0 ? 'G' : 'R';
+    const daysAgo = i % 15;
+    const date = getPastDate(daysAgo);
+    cards.push({
+      id: `sample-${i}`,
+      user: owner,
+      date,
+      question: `${source.question} (${source.chapter})`,
+      answer: source.answer,
+      tags: [source.tag, source.chapter, 'IBO'],
+      explanation: `Explique cette notion à l’autre : ${source.note}`,
+      note: `Aide : ${source.note}`,
+      reviews: [],
+      seenBy: []
+    });
+  }
+  return cards;
+}
+
+function generateSampleQuestions() {
+  const chapters = ['Génétique', 'Photosynthèse', 'Cellule', 'Écologie', 'Évolution'];
+  const themes = ['Hérédité', 'Cycle de Calvin', 'Membrane', 'Population', 'Sélection'];
+  const answers = ['ADN', 'Glucose', 'Protéines intégrales', 'Oxygène', 'Sélection naturelle'];
+  const options = [
+    ['ADN', 'ARN', 'Protéine', 'Glucose'],
+    ['Oxygène', 'Glucose', 'ATP', 'Eau'],
+    ['Protéines intégrales', 'ADN', 'Ribosomes', 'Paroi cellulaire'],
+    ['Coeur', 'Poumons', 'Reins', 'Foie'],
+    ['Migration', 'Mutation', 'Sélection naturelle', 'Dissolution']
+  ];
+  const questions = [];
+  for (let i = 0; i < 100; i += 1) {
+    const chapter = chapters[i % chapters.length];
+    const theme = themes[i % themes.length];
+    const answer = answers[i % answers.length];
+    const questionText = `Question ${i + 1} : Quelle est la bonne réponse pour ${chapter} ?`;
+    questions.push({
+      id: `q-${i}`,
+      chapter,
+      theme,
+      question: questionText,
+      options: options[i % options.length],
+      answer,
+      source: 'IBO'
+    });
+  }
+  return questions;
+}
+
+function getPastDate(daysAgo) {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
 }
 
 function getUser(id) {
@@ -143,35 +234,66 @@ function getDaily(user, day = TODAY) {
   return user.daily[day];
 }
 
-function initUserDaily() {
-  const user = getUser(state.currentUser);
-  getDaily(user);
-  const other = getUser(getOtherUserId());
-  getDaily(other);
+function ensureSampleData() {
+  if (state.users.G.flashcards.length + state.users.R.flashcards.length === 0) {
+    sampleFlashcards.forEach((card) => {
+      getUser(card.user).flashcards.push(card);
+    });
+  }
+  if (!state.questionBank || state.questionBank.length === 0) {
+    state.questionBank = sampleQuestions.slice();
+  }
 }
 
 function checkDayTransition() {
-  const last = new Date(state.lastUpdate + 'T04:00:00');
   const now = new Date();
-  if (now.toISOString().slice(0, 10) !== state.lastUpdate) {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayKey = yesterday.toISOString().slice(0, 10);
-    const gDone = getDaily(getUser('G'), yesterdayKey).complete;
-    const rDone = getDaily(getUser('R'), yesterdayKey).complete;
-    if (now.getHours() >= 4) {
-      if (gDone && rDone) {
-        state.streak += 1;
-        state.pending = false;
-      } else if (gDone || rDone) {
-        if (!state.pending) state.pending = true;
+  if (state.lastUpdate === TODAY) return;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const gDone = getDaily(getUser('G'), yesterdayKey).complete;
+  const rDone = getDaily(getUser('R'), yesterdayKey).complete;
+  if (now.getHours() >= 4) {
+    if (gDone && rDone) {
+      state.streak += 1;
+      state.pending = false;
+      streakHint.textContent = 'Streak validé: les deux ont fini.';
+    } else if (gDone || rDone) {
+      state.pending = true;
+      streakHint.textContent = 'Streak en attente : une seule personne a fini.';
+    } else {
+      if (state.jokers > 0) {
+        state.jokers -= 1;
+        streakHint.textContent = 'Streak sauvé par un joker.';
       } else {
         state.streak = 0;
-        state.pending = false;
+        streakHint.textContent = 'Streak perdu, aucune journée valida.';
       }
-      state.lastUpdate = now.toISOString().slice(0, 10);
-      saveState();
+      state.pending = false;
     }
+    state.lastUpdate = TODAY;
+    saveState();
+  }
+}
+
+function checkMonthTransition() {
+  const currentMonth = TODAY.slice(0, 7);
+  if (state.lastMonth !== currentMonth) {
+    processMonthlyEnd(state.lastMonth);
+    state.lastMonth = currentMonth;
+    saveState();
+  }
+}
+
+function processMonthlyEnd(monthKey) {
+  if (!monthKey) return;
+  const g = getUser('G');
+  const r = getUser('R');
+  const gCompleted = g.monthlyTests.some(test => test.date.startsWith(monthKey));
+  const rCompleted = r.monthlyTests.some(test => test.date.startsWith(monthKey));
+  if (gCompleted && rCompleted) {
+    g.jokers += 1;
+    r.jokers += 1;
   }
 }
 
@@ -194,6 +316,18 @@ function goToPage(page) {
   else if (page === 'recap') showSection('recap');
   else if (page === 'settings') showSection('settings');
   else showSection(page);
+  if (page === 'library') {
+    markOtherCardsSeen();
+  }
+}
+
+function markOtherCardsSeen() {
+  const other = getUser(getOtherUserId());
+  other.flashcards.forEach(card => {
+    if (!card.seenBy) card.seenBy = [];
+    if (!card.seenBy.includes(state.currentUser)) card.seenBy.push(state.currentUser);
+  });
+  saveState();
 }
 
 function renderApp() {
@@ -205,18 +339,20 @@ function renderApp() {
   startScreen.classList.add('hidden');
   appScreen.classList.remove('hidden');
   currentUserBadge.textContent = `Profil ${state.currentUser}`;
-  otherUserBadge.textContent = `Autre profil ${getOtherUserId()}`;
+  otherUserBadge.textContent = `Autre ${getOtherUserId()}`;
   streakCount.textContent = state.streak;
   streakStatus.textContent = state.pending ? 'En attente' : 'Actif';
   updateHome();
   renderReading();
   renderFlashcards();
+  renderLibrary();
   renderProfile();
   renderStats();
   renderChapters();
   renderWeaknesses();
   renderBadges();
   renderRecap();
+  renderQuizStatus();
 }
 
 function updateHome() {
@@ -224,18 +360,19 @@ function updateHome() {
   const other = getUser(getOtherUserId());
   const today = getDaily(user);
   const otherToday = getDaily(other);
-  todayReading.textContent = formatMinutes(today.reading);
+  todayReading.textContent = `${today.reading} min`;
   todayFlashcards.textContent = today.cards;
   todayTested.textContent = today.tested;
   otherProgress.textContent = otherToday.complete ? 'L’autre a terminé' : 'En cours';
-  homeNotice.textContent = today.complete ? 'Tu as terminé ta journée !' : 'Il te reste encore des étapes à valider.';
+  homeNotice.textContent = today.complete ? 'Tu as terminé ta journée !' : 'Il te reste des étapes.';
+  const unseenCount = other.flashcards.filter(card => !card.seenBy || !card.seenBy.includes(state.currentUser)).length;
+  otherUnseenCount.textContent = unseenCount;
 }
 
 function renderReading() {
   const user = getUser(state.currentUser);
-  const daily = getDaily(user);
+  const days = Object.keys(user.reading).sort((a, b) => b.localeCompare(a)).slice(0, 7);
   readingHistory.innerHTML = '';
-  const days = Object.keys(user.reading).sort((a,b)=>b.localeCompare(a)).slice(0, 7);
   days.forEach(day => {
     const item = document.createElement('div');
     item.className = 'history-item';
@@ -245,6 +382,7 @@ function renderReading() {
   if (days.length === 0) {
     readingHistory.innerHTML = '<div class="history-item"><span>Aucun historique encore</span></div>';
   }
+  updateTimerDisplay();
 }
 
 function renderFlashcards() {
@@ -264,6 +402,36 @@ function renderFlashcards() {
   });
 }
 
+function renderLibrary() {
+  const user = getUser(state.currentUser);
+  const other = getUser(getOtherUserId());
+  const filter = librarySearch.value.trim().toLowerCase();
+  const sort = librarySort.value;
+  const cards = [...user.flashcards, ...other.flashcards].sort((a,b) => {
+    if (sort === 'tag') return a.tags[0].localeCompare(b.tags[0]);
+    if (sort === 'user') return a.user.localeCompare(b.user);
+    return b.date.localeCompare(a.date);
+  }).filter(card => {
+    if (!filter) return true;
+    return [card.question, card.answer, ...card.tags].some(text => text.toLowerCase().includes(filter));
+  });
+  libraryList.innerHTML = '';
+  if (cards.length === 0) {
+    libraryList.innerHTML = '<div class="library-card"><span>Aucune carte correspondante.</span></div>';
+    return;
+  }
+  cards.forEach(card => {
+    const item = document.createElement('div');
+    item.className = 'library-card';
+    item.innerHTML = `<span>${card.user === state.currentUser ? 'Moi' : 'Autre'} • ${card.date}</span>
+      <strong>${card.question}</strong>
+      <p>${card.answer}</p>
+      <small>${card.tags.join(', ')}</small>
+      <p>${card.explanation}</p>`;
+    libraryList.appendChild(item);
+  });
+}
+
 function renderProfile() {
   const user = getUser(state.currentUser);
   const other = getUser(getOtherUserId());
@@ -273,12 +441,14 @@ function renderProfile() {
   myTotalCards.textContent = user.flashcards.length;
   myWeekCards.textContent = userStats.weekCards;
   myTotalTests.textContent = user.tests.length;
+  myTotalQuizzes.textContent = user.quizzes.length;
   mySuccessRate.textContent = `${userStats.successRate}%`;
   myTotalReading.textContent = `${Object.values(user.reading).reduce((sum, v) => sum + v, 0)} min`;
   otherJokers.textContent = other.jokers;
   otherTotalCards.textContent = other.flashcards.length;
   otherWeekCards.textContent = otherStats.weekCards;
   otherTotalTests.textContent = other.tests.length;
+  otherTotalQuizzes.textContent = other.quizzes.length;
   otherSuccessRate.textContent = `${otherStats.successRate}%`;
   otherTotalReading.textContent = `${Object.values(other.reading).reduce((sum, v) => sum + v, 0)} min`;
 }
@@ -286,8 +456,9 @@ function renderProfile() {
 function computeStats(user) {
   const weekDays = getLastDays(7);
   const weekCards = user.flashcards.filter(card => weekDays.includes(card.date)).length;
-  const totalTests = user.tests.length;
-  const successRate = totalTests === 0 ? 0 : Math.round((user.tests.filter(t=>t.score>=50).length / totalTests) * 100);
+  const totalTests = user.tests.length + user.quizzes.length;
+  const successful = user.tests.filter(t => t.score >= 50).length + user.quizzes.filter(q => q.correct).length;
+  const successRate = totalTests === 0 ? 0 : Math.round((successful / totalTests) * 100);
   return { weekCards, successRate };
 }
 
@@ -299,13 +470,13 @@ function renderStats() {
   days.forEach(day => {
     const readingCount = me.reading[day] || 0;
     const cardCount = me.flashcards.filter(card => card.date === day).length;
-    const tests = me.tests.filter(test => test.date === day).length;
+    const tests = me.tests.filter(test => test.date === day).length + me.quizzes.filter(quiz => quiz.date === day).length;
     const row = document.createElement('div');
     row.className = 'bar-row';
     row.innerHTML = `<strong>${day}</strong><div style="display:grid;gap:8px;flex:1">
       ${createBar('Lecture', readingCount, 60)}
       ${createBar('Flashcards', cardCount, 8)}
-      ${createBar('Tests', tests, 3)}
+      ${createBar('Tests', tests, 4)}
     </div>`;
     statsCharts.appendChild(row);
   });
@@ -317,10 +488,10 @@ function createBar(label, value, max) {
 }
 
 function renderChapters() {
-  const chapters = ['Photosynthèse', 'Génétique', 'Cellule', 'Ecologie'];
+  const chapters = ['Photosynthèse', 'Génétique', 'Cellule', 'Écologie', 'Évolution'];
   chapterProgress.innerHTML = '';
   chapters.forEach(name => {
-    const progress = Math.floor(Math.random() * 80) + 10;
+    const progress = Math.floor(Math.random() * 65) + 20;
     const item = document.createElement('div');
     item.className = 'chapter-item';
     item.innerHTML = `<span>${name}</span><strong>${progress}% maîtrisé</strong>`;
@@ -338,30 +509,34 @@ function renderWeaknesses() {
     weakTags.forEach(tag => {
       const item = document.createElement('div');
       item.className = 'weakness-item';
-      item.innerHTML = `<span>Tag difficile</span><strong>${tag}</strong>`;
+      item.innerHTML = `<span>Chapitre à revoir</span><strong>${tag}</strong>`;
       weaknessList.appendChild(item);
     });
   }
 }
 
 function gatherWeakTags(user) {
-  const wrongCards = user.flashcards.filter(card => card.reviews && card.reviews.some(r => r.result === 'wrong'));
+  const wrongCards = user.flashcards.filter(card => card.reviews && card.reviews.some(r => r.result === 'wrong' || r.difficulty === 'hard'));
   const tags = wrongCards.flatMap(card => card.tags);
   return [...new Set(tags)].slice(0, 5);
 }
 
 function renderBadges() {
   badgeList.innerHTML = '';
-  const builtBadges = [
+  const user = getUser(state.currentUser);
+  const badges = [
     { label: '7 jours de streak', earned: state.streak >= 7 },
-    { label: '30 flashcards créées', earned: getUser(state.currentUser).flashcards.length >= 30 },
-    { label: '1 bonus IBO', earned: state.jokers > 0 },
-    { label: 'Premier quiz', earned: getUser(state.currentUser).quizzes.length > 0 }
+    { label: '30 flashcards créées', earned: user.flashcards.length >= 30 },
+    { label: '100 flashcards créées', earned: user.flashcards.length >= 100 },
+    { label: '10 quiz réalisés', earned: user.quizzes.length >= 10 },
+    { label: '5 tests mensuels', earned: user.monthlyTests.length >= 5 },
+    { label: '1 joker obtenu', earned: user.jokers >= 1 },
+    { label: '1 mois de révision', earned: state.lastMonth !== new Date().toISOString().slice(0,7) }
   ];
-  builtBadges.forEach(badge => {
+  badges.forEach(badge => {
     const item = document.createElement('div');
     item.className = 'badge-item';
-    item.innerHTML = `<span>${badge.label}</span><strong>${badge.earned ? '✅' : '🔒'}</strong>`;
+    item.innerHTML = `<span>${badge.label}</span><strong>${badge.earned ? '🏅' : '🔒'}</strong>`;
     badgeList.appendChild(item);
   });
 }
@@ -374,7 +549,7 @@ function renderRecap() {
   recap.innerHTML = `
     <span>Temps de lecture cette semaine</span><strong>${sumLast7(user.reading)} min</strong>
     <span>Flashcards créées cette semaine</span><strong>${user.flashcards.filter(card => getLastDays(7).includes(card.date)).length}</strong>
-    <span>Tests réalisés cette semaine</span><strong>${user.tests.filter(test => getLastDays(7).includes(test.date)).length}</strong>
+    <span>Tests réalisés cette semaine</span><strong>${user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length}</strong>
     <span>Score moyen quiz</span><strong>${averageQuizScore(user)}%</strong>
     <span>Vainqueur de la semaine</span><strong>${determineWeeklyWinner(user, other)}</strong>
   `;
@@ -393,8 +568,8 @@ function averageQuizScore(user) {
 }
 
 function determineWeeklyWinner(user, other) {
-  const scoreUser = sumLast7(user.reading) + user.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 2 + user.tests.filter(test => getLastDays(7).includes(test.date)).length * 3;
-  const scoreOther = sumLast7(other.reading) + other.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 2 + other.tests.filter(test => getLastDays(7).includes(test.date)).length * 3;
+  const scoreUser = sumLast7(user.reading) + user.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
+  const scoreOther = sumLast7(other.reading) + other.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (other.tests.filter(test => getLastDays(7).includes(test.date)).length + other.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
   if (scoreUser === scoreOther) return 'Match nul';
   return scoreUser > scoreOther ? 'Toi' : 'Autre personne';
 }
@@ -407,17 +582,46 @@ function getLastDays(count) {
   });
 }
 
-function updateDailyCompletion() {
-  const user = getUser(state.currentUser);
-  const daily = getDaily(user);
-  if (daily.reading >= 5 && daily.cards >= 3 && daily.tested >= 1) {
-    daily.complete = true;
+function updateTimerDisplay() {
+  const minutes = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+  const seconds = String(timerSeconds % 60).padStart(2, '0');
+  timerDisplay.textContent = `${minutes}:${seconds}`;
+}
+
+function startTimer() {
+  if (isTimerRunning) return;
+  isTimerRunning = true;
+  timerStart.classList.add('hidden');
+  timerPause.classList.remove('hidden');
+  timerStatus.textContent = 'Lecture en cours...';
+  timerInterval = setInterval(() => {
+    timerSeconds += 1;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function pauseTimer() {
+  isTimerRunning = false;
+  timerStart.classList.remove('hidden');
+  timerPause.classList.add('hidden');
+  timerStatus.textContent = 'Lecture en pause. Termine pour enregistrer.';
+  clearInterval(timerInterval);
+}
+
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  const minutes = Math.ceil(timerSeconds / 60);
+  if (minutes > 0) {
+    addReading(minutes);
+    timerStatus.textContent = `Ajouté ${minutes} min de lecture.`;
+  } else {
+    timerStatus.textContent = 'Aucun temps à ajouter.';
   }
-  const other = getUser(getOtherUserId());
-  const otherDaily = getDaily(other);
-  if (daily.complete && otherDaily.complete && !state.pending) {
-    streakStatus.textContent = 'Streak actif';
-  }
+  timerSeconds = 0;
+  isTimerRunning = false;
+  timerStart.classList.remove('hidden');
+  timerPause.classList.add('hidden');
+  updateTimerDisplay();
 }
 
 function addReading(minutes) {
@@ -428,6 +632,14 @@ function addReading(minutes) {
   tryCompleteDay(user);
   saveState();
   renderApp();
+}
+
+function addManualReading() {
+  const amount = parseInt(manualMinutes.value, 10);
+  if (!amount || amount < 1) return alert('Entre un nombre de minutes valide.');
+  addReading(amount);
+  manualMinutes.value = '';
+  timerStatus.textContent = `Ajouté ${amount} min manuellement.`;
 }
 
 function tryCompleteDay(user) {
@@ -457,7 +669,8 @@ function addFlashcard() {
     tags,
     explanation,
     note,
-    reviews: []
+    reviews: [],
+    seenBy: [state.currentUser]
   };
   user.flashcards.push(newCard);
   const daily = getDaily(user);
@@ -485,20 +698,25 @@ function startReviewSession() {
   const otherNew = other.flashcards.filter(card => card.date === TODAY);
   reviewQueue = [...newCards, ...otherNew, ...dueCards].slice(0, count);
   if (reviewQueue.length === 0) {
-    alert("Aucune carte disponible pour ce test. Crée des flashcards d'abord.");
+    alert('Aucune carte disponible pour ce test. Crée des flashcards d’abord.');
     return;
   }
   reviewIndex = 0;
   reviewCorrect = 0;
   reviewCard.classList.remove('hidden');
   reviewSummary.classList.add('hidden');
+  showAnswer.classList.remove('hidden');
+  easyBtn.classList.add('hidden');
+  mediumBtn.classList.add('hidden');
+  hardBtn.classList.add('hidden');
   renderReviewCard();
 }
 
 function shouldReview(card) {
   const last = card.reviews?.slice(-1)[0];
   if (!last) return true;
-  const days = { easy: 30, medium: 7, hard: 1 }[last.difficulty] || 1;
+  const intervals = { easy: 30, medium: 7, hard: 1 };
+  const days = intervals[last.difficulty] || 1;
   const nextDue = new Date(last.date);
   nextDue.setDate(nextDue.getDate() + days);
   return new Date(TODAY) >= nextDue;
@@ -514,23 +732,27 @@ function renderReviewCard() {
   reviewQuestion.textContent = card.question;
   reviewAnswer.textContent = card.answer;
   reviewAnswer.classList.add('hidden');
-  correctBtn.classList.add('hidden');
-  wrongBtn.classList.add('hidden');
   showAnswer.classList.remove('hidden');
+  easyBtn.classList.add('hidden');
+  mediumBtn.classList.add('hidden');
+  hardBtn.classList.add('hidden');
 }
 
 function revealAnswer() {
   reviewAnswer.classList.remove('hidden');
-  correctBtn.classList.remove('hidden');
-  wrongBtn.classList.remove('hidden');
   showAnswer.classList.add('hidden');
+  easyBtn.classList.remove('hidden');
+  mediumBtn.classList.remove('hidden');
+  hardBtn.classList.remove('hidden');
 }
 
-function gradeReview(correct) {
+function gradeReview(difficulty) {
   const card = reviewQueue[reviewIndex];
-  const difficulty = correct ? 'medium' : 'hard';
-  card.reviews.push({ date: TODAY, result: correct ? 'correct' : 'wrong', difficulty });
-  if (correct) reviewCorrect += 1;
+  if (!card.reviews) card.reviews = [];
+  card.reviews.push({ date: TODAY, difficulty, result: difficulty === 'easy' ? 'correct' : 'wrong' });
+  if (difficulty === 'easy' || difficulty === 'medium') {
+    reviewCorrect += 1;
+  }
   reviewIndex += 1;
   renderReviewCard();
 }
@@ -538,7 +760,7 @@ function gradeReview(correct) {
 function finishReviewSession() {
   reviewCard.classList.add('hidden');
   reviewSummary.classList.remove('hidden');
-  reviewResults.textContent = `Tu as répondu correctement à ${reviewCorrect} cartes sur ${reviewQueue.length}.`;
+  reviewResults.textContent = `Tu as répondu correctement à ${reviewCorrect} sur ${reviewQueue.length} cartes.`;
   const user = getUser(state.currentUser);
   user.tests.push({ date: TODAY, count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100) });
   const daily = getDaily(user);
@@ -549,8 +771,9 @@ function finishReviewSession() {
 }
 
 function startQuizSession() {
-  const question = sampleQuestions[Math.floor(Math.random() * sampleQuestions.length)];
-  quizState = { question, selected: null, answered: false };
+  const question = pickRandomQuestion();
+  if (!question) return alert('Aucune question disponible. Importez des annales ou réessayez plus tard.');
+  quizState = { question, selected: null };
   quizCard.classList.remove('hidden');
   quizSummary.classList.add('hidden');
   quizMeta.textContent = `${question.chapter} • ${question.theme}`;
@@ -565,19 +788,22 @@ function startQuizSession() {
   });
 }
 
+function pickRandomQuestion() {
+  if (!state.questionBank || state.questionBank.length === 0) return null;
+  return state.questionBank[Math.floor(Math.random() * state.questionBank.length)];
+}
+
 function selectQuizOption(button, option) {
   quizState.selected = option;
-  Array.from(quizOptions.children).forEach(btn => btn.classList.remove('active'));
-  button.classList.add('active');
+  Array.from(quizOptions.children).forEach(btn => btn.classList.toggle('active', btn === button));
 }
 
 function validateQuizAnswer() {
   if (!quizState || !quizState.selected) {
-    alert('Sélectionne une réponse.');
+    alert('Choisis une réponse.');
     return;
   }
   const correct = quizState.selected === quizState.question.answer;
-  quizState.answered = true;
   Array.from(quizOptions.children).forEach(btn => {
     btn.classList.toggle('correct', btn.textContent === quizState.question.answer);
     if (btn.textContent === quizState.selected && btn.textContent !== quizState.question.answer) btn.classList.add('wrong');
@@ -595,6 +821,96 @@ function finishQuizSession() {
   renderApp();
 }
 
+function importAnnales() {
+  const file = importAnnalesInput.files[0];
+  if (!file) return alert('Sélectionne un fichier JSON.');
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      if (!Array.isArray(imported)) throw new Error('Format invalide');
+      imported.forEach((item, index) => {
+        if (item.question && item.options && item.answer) {
+          state.questionBank.push({ id: `import-${Date.now()}-${index}`, chapter: item.chapter || 'IBO', theme: item.theme || 'Annales', question: item.question, options: item.options, answer: item.answer, source: 'Annales' });
+        }
+      });
+      saveState();
+      renderQuizStatus();
+      alert('Annales importées avec succès.');
+    } catch (e) {
+      alert('Impossible de lire le fichier : ' + e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderQuizStatus() {
+  questionBankCount.textContent = state.questionBank.length;
+}
+
+function startMonthlyTest() {
+  const questions = shuffleArray(state.questionBank).slice(0, 25);
+  if (questions.length === 0) return alert('Importe des annales pour lancer le test mensuel.');
+  monthlyState = { questions, index: 0, correct: 0, selected: null };
+  monthlyCard.classList.remove('hidden');
+  monthlySummary.classList.add('hidden');
+  renderMonthlyQuestion();
+}
+
+function renderMonthlyQuestion() {
+  if (!monthlyState) return;
+  if (monthlyState.index >= monthlyState.questions.length) {
+    finishMonthlyTest();
+    return;
+  }
+  const question = monthlyState.questions[monthlyState.index];
+  monthlyMeta.textContent = `${question.chapter} • ${question.theme}`;
+  monthlyQuestion.textContent = question.question;
+  monthlyOptions.innerHTML = '';
+  question.options.forEach(option => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = option;
+    btn.addEventListener('click', () => selectMonthlyOption(btn, option));
+    monthlyOptions.appendChild(btn);
+  });
+}
+
+function selectMonthlyOption(button, option) {
+  monthlyState.selected = option;
+  Array.from(monthlyOptions.children).forEach(btn => btn.classList.toggle('active', btn === button));
+}
+
+function validateMonthlyAnswer() {
+  if (!monthlyState || !monthlyState.selected) return alert('Choisis une réponse.');
+  const question = monthlyState.questions[monthlyState.index];
+  const correct = monthlyState.selected === question.answer;
+  if (correct) monthlyState.correct += 1;
+  Array.from(monthlyOptions.children).forEach(btn => {
+    btn.classList.toggle('correct', btn.textContent === question.answer);
+    if (btn.textContent === monthlyState.selected && btn.textContent !== question.answer) btn.classList.add('wrong');
+  });
+  monthlyState.index += 1;
+  setTimeout(renderMonthlyQuestion, 300);
+}
+
+function finishMonthlyTest() {
+  monthlyCard.classList.add('hidden');
+  monthlySummary.classList.remove('hidden');
+  const score = Math.round((monthlyState.correct / monthlyState.questions.length) * 100);
+  monthlyResults.textContent = `Score mensuel : ${score}% (${monthlyState.correct}/${monthlyState.questions.length}).`;
+  const user = getUser(state.currentUser);
+  user.monthlyTests.push({ date: TODAY, score, total: monthlyState.questions.length });
+  saveState();
+  monthlyState = null;
+  renderApp();
+}
+
+function finishMonthlyReview() {
+  monthlySummary.classList.add('hidden');
+  renderApp();
+}
+
 function resetAppData() {
   if (!confirm('Tu veux vraiment supprimer toutes les données ?')) return;
   localStorage.removeItem(STORAGE_KEY);
@@ -608,24 +924,25 @@ function attachHandlers() {
       initUserDaily();
       saveState();
       renderApp();
+      goToPage('home');
     });
   });
   document.querySelectorAll('[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => goToPage(btn.dataset.nav));
   });
-  add5min.addEventListener('click', () => addReading(5));
-  setMinutes.addEventListener('click', () => {
-    const amount = parseInt(manualMinutes.value, 10);
-    if (!amount || amount < 1) return alert('Entre un nombre de minutes valide.');
-    addReading(amount);
-    manualMinutes.value = '';
-  });
+  timerStart.addEventListener('click', startTimer);
+  timerPause.addEventListener('click', pauseTimer);
+  timerStop.addEventListener('click', stopTimer);
+  setMinutes.addEventListener('click', addManualReading);
   saveCardBtn.addEventListener('click', addFlashcard);
   clearCardBtn.addEventListener('click', resetFlashcardForm);
+  librarySearch.addEventListener('input', renderLibrary);
+  librarySort.addEventListener('change', renderLibrary);
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
-  correctBtn.addEventListener('click', () => gradeReview(true));
-  wrongBtn.addEventListener('click', () => gradeReview(false));
+  easyBtn.addEventListener('click', () => gradeReview('easy'));
+  mediumBtn.addEventListener('click', () => gradeReview('medium'));
+  hardBtn.addEventListener('click', () => gradeReview('hard'));
   finishReview.addEventListener('click', () => {
     reviewSummary.classList.add('hidden');
     renderApp();
@@ -633,13 +950,28 @@ function attachHandlers() {
   startQuiz.addEventListener('click', startQuizSession);
   validateQuiz.addEventListener('click', validateQuizAnswer);
   finishQuiz.addEventListener('click', finishQuizSession);
+  importButton.addEventListener('click', importAnnales);
+  startMonthly.addEventListener('click', startMonthlyTest);
+  validateMonthly.addEventListener('click', validateMonthlyAnswer);
+  finishMonthly.addEventListener('click', finishMonthlyReview);
   clearData.addEventListener('click', resetAppData);
-  resetApp.addEventListener('click', resetAppData);
+  settingsButton.addEventListener('click', () => goToPage('settings'));
+  document.querySelectorAll('.tab-button').forEach(btn => btn.addEventListener('click', () => goToPage(btn.dataset.nav)));
+}
+
+function initUserDaily() {
+  const user = getUser(state.currentUser);
+  getDaily(user);
+  const other = getUser(getOtherUserId());
+  getDaily(other);
 }
 
 function init() {
-  attachHandlers();
+  ensureSampleData();
+  checkMonthTransition();
   checkDayTransition();
+  renderQuizStatus();
+  attachHandlers();
   if (state.currentUser) {
     initUserDaily();
     renderApp();
@@ -650,6 +982,14 @@ function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(console.error);
   }
+}
+
+function renderQuizStatus() {
+  questionBankCount.textContent = state.questionBank.length;
+}
+
+function shuffleArray(array) {
+  return array.slice().sort(() => Math.random() - 0.5);
 }
 
 init();

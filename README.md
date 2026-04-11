@@ -7,10 +7,12 @@ Application web mobile conçue pour deux utilisatrices qui révisent ensemble ch
 - Choix de profil entre deux utilisatrices : `G` et `R`
 - Streak commun affiché en grand
 - Suivi des tâches journalières : lecture, création de flashcards, test
-- Lecture : bouton +5 min, saisie manuelle et historique
+- Lecture : chronomètre intégré, saisie manuelle et historique de lecture
 - Création de flashcards avec question, réponse, tags, explication et message
-- Test des flashcards sur les nouvelles cartes du jour et révision espacée
-- Quiz IBO simple avec questions par chapitre et thème
+- Bibliothèque de toutes les cartes avec filtre par tag et tri par date
+- Test de flashcards avec répétition espacée inspirée d’Anki
+- Quiz IBO avec 100 questions intégrées et import d’annales JSON
+- Test mensuel IBO réel, enregistrement du score et jokers automatiques
 - Profil comparatif, statistiques, progression par chapitre, points faibles, badges, récapitulatif hebdomadaire
 - Fonctionne hors ligne grâce au service worker
 

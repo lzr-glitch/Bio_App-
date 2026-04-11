@@ -5,7 +5,11 @@ const ASSETS = [
   'styles.css',
   'app.js',
   'manifest.json',
-  'icon.svg'
+  'icon.svg',
+  'images/reading.svg',
+  'images/flashcards.svg',
+  'images/quiz.svg',
+  'images/badge.svg'
 ];
 
 self.addEventListener('install', event => {
