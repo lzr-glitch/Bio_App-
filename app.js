@@ -464,12 +464,16 @@ function goToPage(page, preserveTarget = false) {
 }
 
 function applyPageTheme(page) {
-  document.body.classList.remove('theme-blue', 'theme-default');
-  if (page === 'test') {
-    document.body.classList.add('theme-blue');
-  } else {
-    document.body.classList.add('theme-default');
-  }
+  const themeClasses = ['theme-default', 'theme-read', 'theme-flashcards', 'theme-review', 'theme-quiz', 'theme-library'];
+  document.body.classList.remove(...themeClasses);
+  const pageTheme = {
+    reading: 'theme-read',
+    flashcards: 'theme-flashcards',
+    test: 'theme-review',
+    quiz: 'theme-quiz',
+    library: 'theme-library'
+  };
+  document.body.classList.add(pageTheme[page] || 'theme-default');
 }
 
 function markOtherCardsSeen() {
