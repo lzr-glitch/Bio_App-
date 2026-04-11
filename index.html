@@ -1,33 +1,266 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bio App PWA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Revisio IBO</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
-  <meta name="theme-color" content="#2b6cb0" />
+  <meta name="theme-color" content="#d9e5d5" />
 </head>
 <body>
-  <main class="container">
-    <section class="card" id="choose-section">
-      <h1>Choose your user</h1>
-      <div class="button-row">
-        <button class="user-button" data-user="G">User G</button>
-        <button class="user-button" data-user="R">User R</button>
+  <div id="app">
+    <section class="screen screen-start" id="start-screen">
+      <div class="brand-card">
+        <h1>Revisio IBO</h1>
+        <p>Une app de révision quotidienne pour deux utilisatrices, pensée pour les IBO.</p>
       </div>
-      <p class="hint">Choose one letter to see your user screen.</p>
+      <div class="user-choice">
+        <button class="user-button" data-user="G">Je suis G</button>
+        <button class="user-button" data-user="R">Je suis R</button>
+      </div>
+      <p class="support-text">Choisissez votre profil pour démarrer. Tout reste stocké en local et fonctionne hors ligne.</p>
     </section>
 
-    <section class="card hidden" id="user-section">
-      <h1>Your letter is:</h1>
-      <div class="letter-box" id="user-letter">?</div>
-      <button class="primary-button" id="change-button">Choose again</button>
+    <section class="screen screen-app hidden" id="app-screen">
+      <header class="topbar">
+        <div>
+          <span class="badge user-badge" id="current-user-badge"></span>
+          <span class="badge other-user-badge" id="other-user-badge"></span>
+        </div>
+        <button class="icon-button" id="reset-app" title="Réinitialiser l'app">Reset</button>
+      </header>
+
+      <main class="page page-home" id="page-home">
+        <div class="home-panel streak-panel">
+          <div class="streak-label">Streak commun</div>
+          <div class="streak-count" id="streak-count">0</div>
+          <div class="streak-status" id="streak-status">En attente</div>
+        </div>
+
+        <div class="quick-actions">
+          <button class="tile-button" data-nav="reading">Lire</button>
+          <button class="tile-button" data-nav="flashcards">Créer flashcards</button>
+          <button class="tile-button" data-nav="test">Tester flashcards</button>
+          <button class="tile-button" data-nav="quiz">Quiz IBO</button>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <span>Lecture aujourd’hui</span>
+            <strong id="today-reading">0 min</strong>
+          </div>
+          <div class="summary-card">
+            <span>Flashcards créées</span>
+            <strong id="today-flashcards">0</strong>
+          </div>
+          <div class="summary-card">
+            <span>Testées aujourd’hui</span>
+            <strong id="today-tested">0</strong>
+          </div>
+          <div class="summary-card">
+            <span>Autre personne</span>
+            <strong id="other-progress">En attente</strong>
+          </div>
+        </div>
+
+        <div class="home-notice" id="home-notice">Charge les progrès du jour.</div>
+      </main>
+
+      <nav class="tabbar">
+        <button class="tab-button active" data-nav="home">Accueil</button>
+        <button class="tab-button" data-nav="profile">Profil</button>
+        <button class="tab-button" data-nav="stats">Statistiques</button>
+        <button class="tab-button" data-nav="chapter">Chapitres</button>
+        <button class="tab-button" data-nav="badges">Badges</button>
+      </nav>
+
+      <section class="page hidden" id="page-reading">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Lecture</h2>
+        </div>
+        <div class="card small-card">
+          <h3>Durée rapide</h3>
+          <button class="primary-button" id="add-5min">+ 5 minutes</button>
+          <div class="input-group">
+            <label>Ajouter un temps</label>
+            <input type="number" id="manual-minutes" min="1" placeholder="minutes" />
+            <button class="secondary-button" id="set-minutes">Ajouter</button>
+          </div>
+        </div>
+        <div class="card stats-card">
+          <h3>Historique</h3>
+          <div class="history-list" id="reading-history"></div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-flashcards">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Créer des flashcards</h2>
+        </div>
+        <div class="card flashcard-form">
+          <label>Question</label>
+          <textarea id="card-question" rows="3" placeholder="Quelle est la définition ?"></textarea>
+          <label>Réponse</label>
+          <textarea id="card-answer" rows="3" placeholder="Réponse complète"></textarea>
+          <label>Tags (séparés par des virgules)</label>
+          <input type="text" id="card-tags" placeholder="génétique, Campbell chapitre 6" />
+          <label>Explication pour l’autre</label>
+          <textarea id="card-explanation" rows="3" placeholder="Explique avec tes mots"></textarea>
+          <label>Message pour l’autre</label>
+          <input type="text" id="card-note" placeholder="Fais attention à cette notion" />
+          <div class="form-actions">
+            <button class="primary-button" id="save-card">Enregistrer la carte</button>
+            <button class="secondary-button" id="clear-card">Effacer</button>
+          </div>
+        </div>
+        <div class="card stats-card">
+          <h3>Cartes du jour</h3>
+          <div id="today-cards-list" class="small-list"></div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-test">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Tester les flashcards</h2>
+        </div>
+        <div class="card small-card">
+          <label>Nombre de cartes</label>
+          <select id="review-count">
+            <option value="20">20</option>
+            <option value="30" selected>30</option>
+            <option value="50">50</option>
+          </select>
+          <button class="primary-button" id="start-review">Commencer le test</button>
+        </div>
+        <div class="card review-card hidden" id="review-card">
+          <div class="review-progress" id="review-progress"></div>
+          <div class="question-box" id="review-question"></div>
+          <div class="answer-box" id="review-answer"></div>
+          <div class="review-actions">
+            <button class="secondary-button" id="show-answer">Voir la réponse</button>
+            <button class="primary-button hidden" id="correct-btn">Correct</button>
+            <button class="danger-button hidden" id="wrong-btn">Faux</button>
+          </div>
+        </div>
+        <div class="card small-card hidden" id="review-summary">
+          <h3>Résultat du test</h3>
+          <p id="review-results"></p>
+          <button class="primary-button" id="finish-review">Terminer</button>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-quiz">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Quiz IBO</h2>
+        </div>
+        <div class="card small-card">
+          <button class="primary-button" id="start-quiz">Lancer un mini quiz</button>
+        </div>
+        <div class="card quiz-card hidden" id="quiz-card">
+          <div class="question-meta" id="quiz-meta"></div>
+          <div class="question-box" id="quiz-question"></div>
+          <div class="options-list" id="quiz-options"></div>
+          <button class="primary-button" id="validate-quiz">Valider</button>
+        </div>
+        <div class="card small-card hidden" id="quiz-summary">
+          <h3>Quiz terminé</h3>
+          <p id="quiz-results"></p>
+          <button class="primary-button" id="finish-quiz">Terminer</button>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-profile">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Profil</h2>
+        </div>
+        <div class="profile-columns">
+          <div class="profile-block">
+            <h3>Moi</h3>
+            <div class="profile-item"><span>Jokers</span><strong id="my-jokers">0</strong></div>
+            <div class="profile-item"><span>Flashcards totales</span><strong id="my-total-cards">0</strong></div>
+            <div class="profile-item"><span>Flashcards cette semaine</span><strong id="my-week-cards">0</strong></div>
+            <div class="profile-item"><span>Tests totaux</span><strong id="my-total-tests">0</strong></div>
+            <div class="profile-item"><span>Réussite totale</span><strong id="my-success-rate">0%</strong></div>
+            <div class="profile-item"><span>Lecture totale</span><strong id="my-total-reading">0 min</strong></div>
+          </div>
+          <div class="profile-block">
+            <h3>Autre</h3>
+            <div class="profile-item"><span>Jokers</span><strong id="other-jokers">0</strong></div>
+            <div class="profile-item"><span>Flashcards totales</span><strong id="other-total-cards">0</strong></div>
+            <div class="profile-item"><span>Flashcards cette semaine</span><strong id="other-week-cards">0</strong></div>
+            <div class="profile-item"><span>Tests totaux</span><strong id="other-total-tests">0</strong></div>
+            <div class="profile-item"><span>Réussite totale</span><strong id="other-success-rate">0%</strong></div>
+            <div class="profile-item"><span>Lecture totale</span><strong id="other-total-reading">0 min</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-stats">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Statistiques</h2>
+        </div>
+        <div class="card stats-card">
+          <h3>7 derniers jours</h3>
+          <div class="chart-labels">
+            <span>Lecture</span>
+            <span>Flashcards</span>
+            <span>Tests</span>
+          </div>
+          <div class="bars-grid" id="stats-charts"></div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-chapters">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Progression par chapitre</h2>
+        </div>
+        <div class="card chapter-list" id="chapter-progress"></div>
+      </section>
+
+      <section class="page hidden" id="page-weaknesses">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Points faibles</h2>
+        </div>
+        <div class="card weakness-list" id="weakness-list"></div>
+      </section>
+
+      <section class="page hidden" id="page-badges">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Badges</h2>
+        </div>
+        <div class="card badge-grid" id="badge-list"></div>
+      </section>
+
+      <section class="page hidden" id="page-recap">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Récap hebdomadaire</h2>
+        </div>
+        <div class="card recap-card" id="weekly-recap"></div>
+      </section>
+
+      <section class="page hidden" id="page-settings">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Paramètres</h2>
+        </div>
+        <div class="card settings-card">
+          <button class="danger-button" id="clear-data">Réinitialiser toutes les données</button>
+          <p class="small-note">Les données sont stockées localement sur ce téléphone et fonctionnent hors ligne.</p>
+        </div>
+      </section>
     </section>
-  </main>
-
-  <div class="status-bar" id="status-bar"></div>
-
+  </div>
   <script src="app.js"></script>
 </body>
 </html>
