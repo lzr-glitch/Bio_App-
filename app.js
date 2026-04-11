@@ -6,7 +6,7 @@ const defaultState = {
   currentUser: null,
   streak: 0,
   pending: false,
-  theme: 'light',
+  theme: 'dark',
   lastUpdate: TODAY,
   lastMonth: new Date().toISOString().slice(0, 7),
   jokers: 0,
@@ -1092,13 +1092,14 @@ function attachHandlers() {
 }
 
 function applyTheme() {
-  const isDark = state.theme === 'dark';
-  document.body.classList.toggle('dark-mode', isDark);
-  themeToggle.textContent = isDark ? 'Retour au mode clair' : 'Passer en mode sombre';
+  const isLight = state.theme === 'light';
+  document.body.classList.toggle('light-mode', isLight);
+  document.body.classList.toggle('dark-mode', !isLight);
+  themeToggle.textContent = isLight ? 'Passer en mode sombre' : 'Passer en mode clair';
 }
 
 function toggleTheme() {
-  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  state.theme = state.theme === 'light' ? 'dark' : 'light';
   applyTheme();
   saveState();
 }
