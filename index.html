@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bio App PWA</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+  <meta name="theme-color" content="#2b6cb0" />
+</head>
+<body>
+  <main class="container">
+    <section class="card" id="choose-section">
+      <h1>Choose your user</h1>
+      <div class="button-row">
+        <button class="user-button" data-user="G">User G</button>
+        <button class="user-button" data-user="R">User R</button>
+      </div>
+      <p class="hint">Choose one letter to see your user screen.</p>
+    </section>
+
+    <section class="card hidden" id="user-section">
+      <h1>Your letter is:</h1>
+      <div class="letter-box" id="user-letter">?</div>
+      <button class="primary-button" id="change-button">Choose again</button>
+    </section>
+  </main>
+
+  <div class="status-bar" id="status-bar"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
