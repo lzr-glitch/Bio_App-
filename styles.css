@@ -201,6 +201,7 @@ button, input, textarea, select {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 18px;
   padding: 16px 20px;
   border-radius: 30px;
@@ -210,8 +211,10 @@ button, input, textarea, select {
 
 .topbar-badges {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .badge {
@@ -360,8 +363,9 @@ button, input, textarea, select {
 
 .tabbar,
 .bottom-nav {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 8px 10px;
   position: fixed;
@@ -381,8 +385,8 @@ button, input, textarea, select {
   color: var(--primary-dark);
   border-radius: 18px;
   box-shadow: 0 14px 20px rgba(0, 0, 0, 0.18);
+  flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 44px;
