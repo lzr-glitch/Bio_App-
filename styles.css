@@ -3,16 +3,18 @@
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --bg: #f4eee4;
   --surface: #ffffff;
-  --surface-soft: #f7f1e6;
+  --surface-soft: #f6f7ff;
+  --surface-strong: #eef4ee;
   --text: #2e3b32;
   --muted: #6e7c6f;
-  --primary: #6c9b72;
-  --primary-dark: #527858;
-  --accent: #c7ad7b;
+  --primary: #4f8f76;
+  --primary-dark: #2d5c4f;
+  --accent: #7b7fd2;
+  --accent-soft: #e6e5ff;
   --danger: #c45f5f;
   --success: #5b8c68;
   --border: rgba(103, 113, 101, 0.16);
-  --shadow: 0 24px 60px rgba(70, 92, 77, 0.1);
+  --shadow: 0 24px 60px rgba(70, 92, 77, 0.12);
 }
 
 * {
@@ -172,6 +174,9 @@ button, input, textarea, select {
   align-items: center;
   gap: 16px;
   margin-bottom: 16px;
+  padding: 14px 18px;
+  border-radius: 24px;
+  background: linear-gradient(90deg, rgba(110, 142, 119, 0.16), rgba(123, 127, 210, 0.14));
 }
 
 .topbar-badges {
@@ -185,9 +190,10 @@ button, input, textarea, select {
   align-items: center;
   padding: 10px 14px;
   border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--primary-dark);
   font-size: 0.95rem;
+  box-shadow: 0 16px 40px rgba(55, 85, 62, 0.05);
 }
 
 .page-home {
@@ -197,14 +203,15 @@ button, input, textarea, select {
 
 .streak-panel {
   text-align: center;
-  padding: 28px 24px;
-  border-radius: 30px;
-  background: linear-gradient(180deg, #f2f7e9 0%, #dce7ce 100%);
+  padding: 30px 24px;
+  border-radius: 32px;
+  background: linear-gradient(180deg, rgba(121, 169, 113, 0.16), rgba(214, 235, 200, 0.95));
+  border: 1px solid rgba(94, 136, 101, 0.18);
 }
 
 .streak-label {
   font-size: 0.95rem;
-  color: var(--muted);
+  color: var(--primary-dark);
   text-transform: uppercase;
   letter-spacing: 0.14em;
 }
@@ -212,7 +219,7 @@ button, input, textarea, select {
 .streak-count {
   font-size: clamp(3rem, 6vw, 5rem);
   margin: 14px 0 8px;
-  color: var(--primary-dark);
+  color: var(--primary);
 }
 
 .streak-status,
@@ -231,13 +238,24 @@ button, input, textarea, select {
   align-items: center;
   gap: 12px;
   padding: 20px;
-  border-radius: 24px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
+  border-radius: 26px;
+  color: #1f3423;
+  box-shadow: 0 22px 50px rgba(67, 97, 79, 0.14);
   font-size: 1rem;
   text-align: left;
+  transition: transform 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
+
+.tile-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 28px 60px rgba(67, 97, 79, 0.2);
+}
+
+.tile-button:nth-child(1) { background: linear-gradient(135deg, #e8f8f1, #d1e6d5); }
+.tile-button:nth-child(2) { background: linear-gradient(135deg, #f7f1ff, #e2daf9); }
+.tile-button:nth-child(3) { background: linear-gradient(135deg, #fff7e6, #f6e0c4); }
+.tile-button:nth-child(4) { background: linear-gradient(135deg, #e8f4ff, #c9ddff); }
+.tile-button:nth-child(5) { background: linear-gradient(135deg, #f7edea, #e7d0c5); }
 
 .action-icon {
   width: 30px;
@@ -255,13 +273,19 @@ button, input, textarea, select {
   padding: 18px;
 }
 
-.summary-card span,
+..summary-card span,
 .highlight-label,
 .filter-card label,
 .sort-row label {
   display: block;
   margin-bottom: 8px;
   color: var(--muted);
+}
+
+.summary-card {
+  border: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(224, 240, 255, 0.9));
+  border: 1px solid rgba(92, 128, 174, 0.18);
 }
 
 .summary-card strong,
@@ -274,8 +298,9 @@ button, input, textarea, select {
   grid-template-columns: 64px 1fr;
   gap: 14px;
   align-items: center;
-  border: 1px solid rgba(108, 155, 114, 0.2);
-  background: linear-gradient(90deg, rgba(124, 160, 116, 0.12), rgba(255, 255, 255, 0));
+  border: none;
+  background: linear-gradient(135deg, rgba(241, 240, 255, 0.95), rgba(218, 245, 232, 0.95));
+  box-shadow: 0 18px 48px rgba(108, 155, 114, 0.1);
 }
 
 .home-highlight img {

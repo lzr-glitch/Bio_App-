@@ -186,144 +186,144 @@ function generateSampleFlashcards() {
 function generateSampleQuestions() {
   const templates = [
     {
-      chapter: 'Génétique',
-      theme: 'ADN',
-      question: 'Quelle molécule porte l’information génétique dans une cellule ?',
-      options: ['ADN', 'ARN', 'Glucose', 'Lipides'],
-      answer: 'ADN'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Hérédité',
-      question: 'Quel type d’acide nucléique sert de modèle pour la traduction en protéines ?',
-      options: ['ARNm', 'ADN', 'ARNt', 'ATP'],
-      answer: 'ARNm'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Cycle de Calvin',
-      question: 'Quel est le produit principal du cycle de Calvin ?',
-      options: ['Glucose', 'Oxygène', 'NADPH', 'CO2'],
-      answer: 'Glucose'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Lumière',
-      question: 'Quelle molécule absorbe la lumière dans les chloroplastes ?',
-      options: ['Chlorophylle', 'Cellulose', 'Protéine', 'Amidon'],
-      answer: 'Chlorophylle'
+      chapter: 'Cellule',
+      theme: 'Noyau',
+      question: 'Quel organite contient le matériel génétique et contrôle les activités cellulaires ?',
+      options: ['Noyau', 'Mitochondrie', 'Ribosome', 'Golgi'],
+      answer: 'Noyau'
     },
     {
       chapter: 'Cellule',
       theme: 'Membrane',
-      question: 'Quel composant assure la perméabilité sélective de la membrane plasmique ?',
-      options: ['Protéines intégrales', 'Cellulose', 'ADN', 'Glucose'],
-      answer: 'Protéines intégrales'
+      question: 'Quelle structure contrôle le transport de substances dans et hors de la cellule ?',
+      options: ['Membrane plasmique', 'Paroi cellulaire', 'Noyau', 'Chloroplaste'],
+      answer: 'Membrane plasmique'
     },
     {
       chapter: 'Cellule',
-      theme: 'Mitochondrie',
-      question: 'Quel organite produit principalement de l’ATP ?',
-      options: ['Mitochondrie', 'Noyau', 'Ribosome', 'Chloroplaste'],
+      theme: 'Énergie',
+      question: 'Quelle organite produit de l’ATP pendant la respiration cellulaire ?',
+      options: ['Mitochondrie', 'Chloroplaste', 'Ribosome', 'Lysosome'],
       answer: 'Mitochondrie'
     },
     {
-      chapter: 'Écologie',
-      theme: 'Écosystèmes',
-      question: 'Comment appelle-t-on l’ensemble des organismes et de leur environnement ?',
-      options: ['Écosystème', 'Population', 'Communauté', 'Biome'],
-      answer: 'Écosystème'
+      chapter: 'Photosynthèse',
+      theme: 'Chloroplastes',
+      question: 'Dans quel organite a lieu la photosynthèse chez les plantes ?',
+      options: ['Chloroplaste', 'Mitochondrie', 'Noyau', 'Ribosome'],
+      answer: 'Chloroplaste'
     },
     {
-      chapter: 'Écologie',
-      theme: 'Cycle',
-      question: 'Quel cycle décrit le passage de l’eau entre atmosphère, sol et organismes ?',
-      options: ['Cycle de l’eau', 'Cycle du carbone', 'Cycle de l’azote', 'Cycle du phosphore'],
-      answer: 'Cycle de l’eau'
+      chapter: 'Photosynthèse',
+      theme: 'Produits',
+      question: 'Quel gaz est libéré par une plante pendant la photosynthèse ?',
+      options: ['Oxygène', 'Dioxyde de carbone', 'Azote', 'Hydrogène'],
+      answer: 'Oxygène'
+    },
+    {
+      chapter: 'Respiration',
+      theme: 'Gaz respiratoires',
+      question: 'Quel gaz est consommé par les cellules lors de la respiration aérobie ?',
+      options: ['Dioxyde de carbone', 'Oxygène', 'Azote', 'Méthane'],
+      answer: 'Oxygène'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'ADN',
+      question: 'Quel type d’acide contient le code génétique ?',
+      options: ['ADN', 'ARN', 'Protéine', 'Lipide'],
+      answer: 'ADN'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Réplicaton',
+      question: 'Quelle enzyme est nécessaire pour copier l’ADN avant la division cellulaire ?',
+      options: ['ADN polymérase', 'Ribosome', 'Ligase', 'Amylase'],
+      answer: 'ADN polymérase'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Expression génique',
+      question: 'Quel ARN transporte le code du noyau vers le ribosome ?',
+      options: ['ARN messager', 'ARN transfert', 'ADN', 'ARN ribosomique'],
+      answer: 'ARN messager'
+    },
+    {
+      chapter: 'Génétique',
+      theme: 'Chromosomes',
+      question: 'Combien de chromosomes se trouvent normalement dans une cellule humaine diploïde ?',
+      options: ['46', '23', '92', '12'],
+      answer: '46'
     },
     {
       chapter: 'Évolution',
-      theme: 'Sélection naturelle',
-      question: 'Quel mécanisme sélectionne les traits les mieux adaptés ?',
-      options: ['Sélection naturelle', 'Mutation aléatoire', 'Migration', 'Spéciation'],
+      theme: 'Sélection',
+      question: 'Comment s’appelle le processus par lequel les organismes mieux adaptés survivent et se reproduisent ?',
+      options: ['Sélection naturelle', 'Mutation', 'Dérive génétique', 'Migration'],
       answer: 'Sélection naturelle'
     },
     {
       chapter: 'Évolution',
       theme: 'Variation',
-      question: 'Quelle source de variation génétique est produite lors de la méiose ?',
-      options: ['Recombinaison génétique', 'Mitose', 'Transcription', 'Traduction'],
+      question: 'Quel mécanisme produit une nouvelle combinaison de gènes lors de la formation des gamètes ?',
+      options: ['Recombinaison génétique', 'Mitose', 'Traduction', 'Transcription'],
       answer: 'Recombinaison génétique'
     },
     {
       chapter: 'Écologie',
-      theme: 'Niche',
-      question: 'Comment appelle-t-on le rôle fonctionnel d’une espèce dans son milieu ?',
-      options: ['Niche écologique', 'Habitat', 'Population', 'Biome'],
-      answer: 'Niche écologique'
-    },
-    {
-      chapter: 'Cellule',
-      theme: 'Division',
-      question: 'Quel processus produit deux cellules filles identiques ?',
-      options: ['Mitose', 'Meiose', 'Fécondation', 'Diffusion'],
-      answer: 'Mitose'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Expression',
-      question: 'Quel codon de l’ARNm signale le début de la traduction ?',
-      options: ['AUG', 'UAA', 'UAG', 'UGA'],
-      answer: 'AUG'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Chloroplaste',
-      question: 'Quel pigment donne aux feuilles leur couleur verte ?',
-      options: ['Chlorophylle', 'Carotène', 'Xanthophylle', 'Anthocyane'],
-      answer: 'Chlorophylle'
+      theme: 'Réseaux trophiques',
+      question: 'Quel terme désigne les organismes qui fabriquent leur propre nourriture par photosynthèse ?',
+      options: ['Producteurs', 'Consommateurs', 'Décomposeurs', 'Prédateurs'],
+      answer: 'Producteurs'
     },
     {
       chapter: 'Écologie',
-      theme: 'Réseau trophique',
-      question: 'Quel organisme est un consommateur primaire ?',
-      options: ['Herbivore', 'Carnivore', 'Décomposeur', 'Producteur'],
-      answer: 'Herbivore'
-    },
-    {
-      chapter: 'Cellule',
-      theme: 'Ribosome',
-      question: 'Quel organite assemble les acides aminés pour former des protéines ?',
-      options: ['Ribosome', 'Mitochondrie', 'Noyau', 'Chloroplaste'],
-      answer: 'Ribosome'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Mutation',
-      question: 'Quel type de mutation modifie un seul nucléotide ?',
-      options: ['Mutation ponctuelle', 'Délétion', 'Duplication', 'Inversion'],
-      answer: 'Mutation ponctuelle'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Respiration',
-      question: 'Quel gaz est consommé pendant la photosynthèse ?',
-      options: ['CO2', 'O2', 'N2', 'CH4'],
-      answer: 'CO2'
+      theme: 'Cycles',
+      question: 'Quel cycle naturel implique l’échange de carbone entre l’atmosphère, les organismes et les océans ?',
+      options: ['Cycle du carbone', 'Cycle de l’eau', 'Cycle de l’azote', 'Cycle du phosphore'],
+      answer: 'Cycle du carbone'
     },
     {
       chapter: 'Écologie',
-      theme: 'Biodiversité',
-      question: 'Qu’est-ce que la biodiversité ?',
-      options: ['La diversité des espèces', 'La teneur en eau', 'La richesse minérale', 'La température'],
-      answer: 'La diversité des espèces'
+      theme: 'Habitat',
+      question: 'Comment appelle-t-on le lieu où vit une espèce et trouve ses ressources ?',
+      options: ['Habitat', 'Niche', 'Population', 'Communauté'],
+      answer: 'Habitat'
     },
     {
-      chapter: 'Évolution',
-      theme: 'Adaptation',
-      question: 'Quelle évolution survient quand une espèce s’adapte mieux à son milieu ?',
-      options: ['Adaptation', 'Migration', 'Dérive génétique', 'Spéciation'],
-      answer: 'Adaptation'
+      chapter: 'Physiologie',
+      theme: 'Enzymes',
+      question: 'Quel mot décrit une protéine qui accélère une réaction chimique dans une cellule ?',
+      options: ['Enzyme', 'Hormone', 'Anticorps', 'Acide aminé'],
+      answer: 'Enzyme'
+    },
+    {
+      chapter: 'Physiologie',
+      theme: 'Digestion',
+      question: 'Quel organe stocke la bile nécessaire à la digestion des lipides ?',
+      options: ['Vésicule biliaire', 'Estomac', 'Pancréas', 'Foie'],
+      answer: 'Vésicule biliaire'
+    },
+    {
+      chapter: 'Biologie humaine',
+      theme: 'Sang',
+      question: 'Quel composant du sang transporte l’oxygène ?',
+      options: ['Globules rouges', 'Plaquettes', 'Plasma', 'Globules blancs'],
+      answer: 'Globules rouges'
+    },
+    {
+      chapter: 'Biologie humaine',
+      theme: 'Neurones',
+      question: 'Quel type de cellule transmet des impulsions nerveuses ?',
+      options: ['Neurone', 'Érythrocyte', 'Fibroblaste', 'Chondrocyte'],
+      answer: 'Neurone'
+    },
+    {
+      chapter: 'Biologie des plantes',
+      theme: 'Stomates',
+      question: 'Quel élément des plantes régule les échanges de gaz avec l’air ?',
+      options: ['Stomate', 'Xylème', 'Phloème', 'Périderme'],
+      answer: 'Stomate'
     }
   ];
   const questions = [];
