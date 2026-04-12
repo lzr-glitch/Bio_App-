@@ -1354,8 +1354,14 @@ function attachHandlers() {
   });
   saveAdminSettings.addEventListener('click', saveAdminChanges);
   resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
-  adminAddFlashcardOther.addEventListener('click', createAdminFlashcardForOther);
-  adminAddTestOther.addEventListener('click', createAdminTestForOther);
+  adminAddFlashcardOther.addEventListener('click', (event) => {
+    event.stopPropagation();
+    createAdminFlashcardForOther();
+  });
+  adminAddTestOther.addEventListener('click', (event) => {
+    event.stopPropagation();
+    createAdminTestForOther();
+  });
   viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
   viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
   viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));

@@ -326,6 +326,10 @@ button, input, textarea, select {
   flex-wrap: wrap;
 }
 
+.admin-action-row button {
+  pointer-events: auto;
+}
+
 .admin-panel h3,
 .admin-panel h4 {
   margin: 0;
