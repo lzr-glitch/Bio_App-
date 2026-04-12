@@ -465,7 +465,8 @@ function showSection(id) {
   pages.forEach((page) => {
     const el = document.getElementById(`page-${page}`);
     if (el) el.classList.toggle('hidden', page !== id);
-    const tab = document.querySelector(`.tab-button[data-nav="${page}"]`);
+    const navKey = page === 'chapters' ? 'chapter' : page;
+    const tab = document.querySelector(`.tab-button[data-nav="${navKey}"]`);
     if (tab) tab.classList.toggle('active', page === id);
   });
 }
