@@ -330,6 +330,24 @@ button, input, textarea, select {
   pointer-events: auto;
 }
 
+.admin-action-row button:active,
+.admin-action-row button.active {
+  transform: translateY(1px);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+}
+
+.admin-action-feedback {
+  color: var(--primary);
+  font-size: 0.95rem;
+  min-height: 1.3rem;
+  opacity: 0.9;
+}
+
+.admin-action-feedback.hidden {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
 .admin-panel h3,
 .admin-panel h4 {
   margin: 0;

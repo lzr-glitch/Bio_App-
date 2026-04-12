@@ -113,6 +113,7 @@ const adminPanel = document.getElementById('admin-panel');
 const adminResetHour = document.getElementById('admin-reset-hour');
 const adminAddFlashcardOther = document.getElementById('admin-add-flashcard-other');
 const adminAddTestOther = document.getElementById('admin-add-test-other');
+const adminActionFeedback = document.getElementById('admin-action-feedback');
 const quizQuestion = document.getElementById('quiz-question');
 const quizOptions = document.getElementById('quiz-options');
 const validateQuiz = document.getElementById('validate-quiz');
@@ -183,6 +184,7 @@ let timerInterval = null;
 let timerSeconds = 0;
 let isTimerRunning = false;
 let reviewQueue = [];
+let adminFeedbackTimeout = null;
 let reviewIndex = 0;
 let reviewCorrect = 0;
 let quizState = null;
@@ -726,6 +728,16 @@ function saveAdminChanges() {
   renderApp();
 }
 
+function showAdminFeedback(message) {
+  if (!adminActionFeedback) return;
+  adminActionFeedback.textContent = message;
+  adminActionFeedback.classList.remove('hidden');
+  clearTimeout(adminFeedbackTimeout);
+  adminFeedbackTimeout = setTimeout(() => {
+    adminActionFeedback.classList.add('hidden');
+  }, 2500);
+}
+
 function createAdminFlashcardForOther() {
   const otherId = getOtherUserId();
   const otherUser = getUser(otherId);
@@ -748,7 +760,7 @@ function createAdminFlashcardForOther() {
   tryCompleteDay(otherUser);
   saveState();
   renderApp();
-  alert('Une flashcard a été créée pour l’autre personne.');
+  showAdminFeedback('Flashcard créée pour l’autre.');
 }
 
 function createAdminTestForOther() {
@@ -760,7 +772,7 @@ function createAdminTestForOther() {
   tryCompleteDay(otherUser);
   saveState();
   renderApp();
-  alert('Un test a été ajouté pour l’autre personne.');
+  showAdminFeedback('Test ajouté pour l’autre.');
 }
 
 function setUserOverrides(userId, cardsInput, testsInput, quizzesInput, readingInput, rateInput) {
