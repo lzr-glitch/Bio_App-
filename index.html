@@ -302,39 +302,6 @@
             </div>
           </div>
         </div>
-        <div class="card admin-panel hidden" id="admin-panel">
-          <h3>Mode admin (R)</h3>
-          <div class="admin-grid">
-            <div class="admin-control"><label>Streak commun</label><input type="number" id="admin-streak" min="0" /></div>
-            <div class="admin-control"><label>Jokers G</label><input type="number" id="admin-jokers-g" min="0" /></div>
-            <div class="admin-control"><label>Jokers R</label><input type="number" id="admin-jokers-r" min="0" /></div>
-            <div class="admin-control"><label>Lecture min quotidienne</label><input type="number" id="admin-target-reading" min="0" /></div>
-            <div class="admin-control"><label>Flashcards min quotidiennes</label><input type="number" id="admin-target-cards" min="0" /></div>
-            <div class="admin-control"><label>Tests min quotidiens</label><input type="number" id="admin-target-tested" min="0" /></div>
-          </div>
-          <div class="admin-stats-grid">
-            <div>
-              <h4>Stats G</h4>
-              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-g-cards" min="0" /></div>
-              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-g-tests" min="0" /></div>
-              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-g-quizzes" min="0" /></div>
-              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-g-reading" min="0" /></div>
-              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-g-rate" min="0" max="100" /></div>
-            </div>
-            <div>
-              <h4>Stats R</h4>
-              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-r-cards" min="0" /></div>
-              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-r-tests" min="0" /></div>
-              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-r-quizzes" min="0" /></div>
-              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-r-reading" min="0" /></div>
-              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-r-rate" min="0" max="100" /></div>
-            </div>
-          </div>
-          <div class="admin-actions">
-            <button class="primary-button" id="save-admin-settings">Appliquer</button>
-            <button class="secondary-button" id="reset-admin-overrides">Réinitialiser</button>
-          </div>
-        </div>
         </div>
         <div class="card stats-card">
           <h3>7 derniers jours</h3>
@@ -388,6 +355,39 @@
           <button class="secondary-button" id="theme-toggle">Passer en mode sombre</button>
           <button class="danger-button" id="clear-data">Réinitialiser toutes les données</button>
           <p class="small-note">Les données sont stockées localement et l’app est pensée pour fonctionner hors ligne.</p>
+        </div>
+        <div class="card admin-panel hidden" id="admin-panel">
+          <h3>Mode admin (R)</h3>
+          <div class="admin-grid">
+            <div class="admin-control"><label>Streak commun</label><input type="number" id="admin-streak" min="0" /></div>
+            <div class="admin-control"><label>Jokers G</label><input type="number" id="admin-jokers-g" min="0" /></div>
+            <div class="admin-control"><label>Jokers R</label><input type="number" id="admin-jokers-r" min="0" /></div>
+            <div class="admin-control"><label>Lecture min quotidienne</label><input type="number" id="admin-target-reading" min="0" /></div>
+            <div class="admin-control"><label>Flashcards min quotidiennes</label><input type="number" id="admin-target-cards" min="0" /></div>
+            <div class="admin-control"><label>Tests min quotidiens</label><input type="number" id="admin-target-tested" min="0" /></div>
+          </div>
+          <div class="admin-stats-grid">
+            <div>
+              <h4>Stats G</h4>
+              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-g-cards" min="0" /></div>
+              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-g-tests" min="0" /></div>
+              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-g-quizzes" min="0" /></div>
+              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-g-reading" min="0" /></div>
+              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-g-rate" min="0" max="100" /></div>
+            </div>
+            <div>
+              <h4>Stats R</h4>
+              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-r-cards" min="0" /></div>
+              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-r-tests" min="0" /></div>
+              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-r-quizzes" min="0" /></div>
+              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-r-reading" min="0" /></div>
+              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-r-rate" min="0" max="100" /></div>
+            </div>
+          </div>
+          <div class="admin-actions">
+            <button class="primary-button" id="save-admin-settings">Appliquer</button>
+            <button class="secondary-button" id="reset-admin-overrides">Réinitialiser</button>
+          </div>
         </div>
       </section>
     </section>
