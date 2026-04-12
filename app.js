@@ -114,6 +114,7 @@ const adminResetHour = document.getElementById('admin-reset-hour');
 const adminAddFlashcardOther = document.getElementById('admin-add-flashcard-other');
 const adminAddTestOther = document.getElementById('admin-add-test-other');
 const adminActionFeedback = document.getElementById('admin-action-feedback');
+const flashcardTargetHint = document.getElementById('flashcard-target-hint');
 const quizQuestion = document.getElementById('quiz-question');
 const quizOptions = document.getElementById('quiz-options');
 const validateQuiz = document.getElementById('validate-quiz');
@@ -185,6 +186,7 @@ let timerSeconds = 0;
 let isTimerRunning = false;
 let reviewQueue = [];
 let adminFeedbackTimeout = null;
+let adminFlashcardTarget = null;
 let reviewIndex = 0;
 let reviewCorrect = 0;
 let quizState = null;
@@ -603,6 +605,7 @@ function renderReading() {
 }
 
 function renderFlashcards() {
+  setAdminFlashcardHint();
   const user = getUser(state.currentUser);
   const today = getDaily(user);
   todayCardsList.innerHTML = '';
@@ -738,29 +741,22 @@ function showAdminFeedback(message) {
   }, 2500);
 }
 
-function createAdminFlashcardForOther() {
-  const otherId = getOtherUserId();
-  const otherUser = getUser(otherId);
-  const fallbackQuestion = `Flashcard admin pour ${otherId}`;
-  const newCard = {
-    id: `${otherId}-admin-${Date.now()}`,
-    user: otherId,
-    date: getToday(),
-    question: fallbackQuestion,
-    answer: 'Réponse à remplir',
-    tags: ['admin'],
-    explanation: 'Carte ajoutée depuis le mode admin.',
-    note: 'N’hésite pas à modifier cette carte.',
-    reviews: [],
-    seenBy: []
-  };
-  otherUser.flashcards.push(newCard);
-  const daily = getDaily(otherUser);
-  daily.cards = otherUser.flashcards.filter(card => card.date === getToday()).length;
-  tryCompleteDay(otherUser);
-  saveState();
-  renderApp();
-  showAdminFeedback(`Flashcard créée pour ${otherId}. Total cartes : ${otherUser.flashcards.length}`);
+function setAdminFlashcardHint() {
+  if (!flashcardTargetHint) return;
+  if (adminFlashcardTarget) {
+    flashcardTargetHint.textContent = `Cette carte sera créée pour ${adminFlashcardTarget}.`;
+    flashcardTargetHint.classList.remove('hidden');
+  } else {
+    flashcardTargetHint.classList.add('hidden');
+  }
+}
+
+function startAdminFlashcardForOther() {
+  adminFlashcardTarget = getOtherUserId();
+  resetFlashcardForm();
+  setAdminFlashcardHint();
+  renderFlashcards();
+  goToPage('flashcards');
 }
 
 function createAdminTestForOther() {
@@ -1019,10 +1015,12 @@ function addFlashcard() {
     alert('Remplis la question, la réponse, au moins un tag et une explication.');
     return;
   }
-  const user = getUser(state.currentUser);
+  const targetUser = adminFlashcardTarget || state.currentUser;
+  const creator = state.currentUser;
+  const user = getUser(targetUser);
   const newCard = {
-    id: `${state.currentUser}-${Date.now()}`,
-    user: state.currentUser,
+    id: `${targetUser}-${Date.now()}`,
+    user: targetUser,
     date: getToday(),
     question,
     answer,
@@ -1030,7 +1028,7 @@ function addFlashcard() {
     explanation,
     note,
     reviews: [],
-    seenBy: [state.currentUser]
+    seenBy: [creator]
   };
   user.flashcards.push(newCard);
   const daily = getDaily(user);
@@ -1038,6 +1036,8 @@ function addFlashcard() {
   tryCompleteDay(user);
   saveState();
   resetFlashcardForm();
+  adminFlashcardTarget = null;
+  setAdminFlashcardHint();
   renderApp();
 }
 
@@ -1367,19 +1367,22 @@ function attachHandlers() {
   saveAdminSettings.addEventListener('click', saveAdminChanges);
   resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
   if (adminAddFlashcardOther) {
-    adminAddFlashcardOther.addEventListener('click', () => createAdminFlashcardForOther());
+    adminAddFlashcardOther.addEventListener('click', (event) => {
+      event.preventDefault();
+      startAdminFlashcardForOther();
+    });
   }
   if (adminAddTestOther) {
-    adminAddTestOther.addEventListener('click', () => createAdminTestForOther());
+    adminAddTestOther.addEventListener('click', (event) => {
+      event.preventDefault();
+      createAdminTestForOther();
+    });
   }
   if (adminPanel) {
     adminPanel.addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button) return;
-      if (button.id === 'admin-add-flashcard-other') {
-        event.preventDefault();
-        createAdminFlashcardForOther();
-      } else if (button.id === 'admin-add-test-other') {
+      if (button.id === 'admin-add-test-other') {
         event.preventDefault();
         createAdminTestForOther();
       }

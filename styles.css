@@ -343,6 +343,20 @@ button, input, textarea, select {
   opacity: 0.9;
 }
 
+.flashcard-target-hint {
+  color: var(--primary-dark);
+  margin: 0 0 12px;
+  padding: 12px 18px;
+  border-radius: 20px;
+  background: rgba(88, 204, 2, 0.08);
+  border: 1px solid rgba(88, 204, 2, 0.18);
+  font-size: 0.95rem;
+}
+
+.flashcard-target-hint.hidden {
+  display: none;
+}
+
 .admin-action-feedback.hidden {
   opacity: 0;
   transition: opacity 200ms ease;
