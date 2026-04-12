@@ -84,6 +84,7 @@ const quizProgressFill = document.getElementById('quiz-progress-fill');
 const quizProgressLabel = document.getElementById('quiz-progress-label');
 const startQuiz = document.getElementById('start-quiz');
 const quizMeta = document.getElementById('quiz-meta');
+const adminPanel = document.getElementById('admin-panel');
 const quizQuestion = document.getElementById('quiz-question');
 const quizOptions = document.getElementById('quiz-options');
 const validateQuiz = document.getElementById('validate-quiz');
@@ -131,7 +132,6 @@ const viewMyStats = document.getElementById('view-my-stats');
 const viewMyBadges = document.getElementById('view-my-badges');
 const viewOtherStats = document.getElementById('view-other-stats');
 const viewOtherBadges = document.getElementById('view-other-badges');
-const adminPanel = document.getElementById('admin-panel');
 const adminStreak = document.getElementById('admin-streak');
 const adminJokersG = document.getElementById('admin-jokers-g');
 const adminJokersR = document.getElementById('admin-jokers-r');
@@ -485,6 +485,7 @@ function goToPage(page, preserveTarget = false) {
   else if (page === 'settings') showSection('settings');
   else showSection(page);
   applyPageTheme(page);
+  if (page === 'settings') renderSettings();
   if (page === 'library') {
     markOtherCardsSeen();
   }
@@ -635,6 +636,10 @@ function renderProfile() {
   otherTotalQuizzes.textContent = otherDisplay.totalQuizzes;
   otherSuccessRate.textContent = `${otherDisplay.successRate}%`;
   otherTotalReading.textContent = `${otherDisplay.totalReading} min`;
+  renderSettings();
+}
+
+function renderSettings() {
   adminPanel.classList.toggle('hidden', state.currentUser !== 'R');
   if (state.currentUser === 'R') {
     populateAdminInputs();
