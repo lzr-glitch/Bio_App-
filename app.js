@@ -760,7 +760,7 @@ function createAdminFlashcardForOther() {
   tryCompleteDay(otherUser);
   saveState();
   renderApp();
-  showAdminFeedback('Flashcard créée pour l’autre.');
+  showAdminFeedback(`Flashcard créée pour ${otherId}. Total cartes : ${otherUser.flashcards.length}`);
 }
 
 function createAdminTestForOther() {
@@ -772,7 +772,7 @@ function createAdminTestForOther() {
   tryCompleteDay(otherUser);
   saveState();
   renderApp();
-  showAdminFeedback('Test ajouté pour l’autre.');
+  showAdminFeedback(`Test ajouté pour ${otherId}. Total tests : ${otherUser.tests.length}`);
 }
 
 function setUserOverrides(userId, cardsInput, testsInput, quizzesInput, readingInput, rateInput) {
