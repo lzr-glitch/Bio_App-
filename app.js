@@ -1,14 +1,22 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
-const TODAY = new Date().toISOString().slice(0, 10);
 const pages = ['home','reading','flashcards','library','test','quiz','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
+
+function getDayKeyFor(date = new Date(), resetHour = 4) {
+  const local = new Date(date);
+  if (local.getHours() < resetHour) {
+    local.setDate(local.getDate() - 1);
+  }
+  return toLocalDateKey(local);
+}
 
 const defaultState = {
   currentUser: null,
   streak: 0,
   pending: false,
   theme: 'dark',
-  lastUpdate: TODAY,
-  lastMonth: new Date().toISOString().slice(0, 7),
+  dayResetHour: 4,
+  lastUpdate: getDayKeyFor(),
+  lastMonth: getDayKeyFor().slice(0, 7),
   jokers: 0,
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   users: {
@@ -22,6 +30,23 @@ const sampleQuestions = generateSampleQuestions();
 const sampleFlashcards = generateSampleFlashcards();
 
 const state = loadState();
+
+function toLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDayKey(date = new Date()) {
+  const resetHour = state.dayResetHour ?? 4;
+  return getDayKeyFor(date, resetHour);
+}
+
+function getToday() {
+  return getDayKey();
+}
+
 const startScreen = document.getElementById('start-screen');
 const appScreen = document.getElementById('app-screen');
 const currentUserBadge = document.getElementById('current-user-badge');
@@ -85,6 +110,9 @@ const quizProgressLabel = document.getElementById('quiz-progress-label');
 const startQuiz = document.getElementById('start-quiz');
 const quizMeta = document.getElementById('quiz-meta');
 const adminPanel = document.getElementById('admin-panel');
+const adminResetHour = document.getElementById('admin-reset-hour');
+const adminAddFlashcardOther = document.getElementById('admin-add-flashcard-other');
+const adminAddTestOther = document.getElementById('admin-add-test-other');
 const quizQuestion = document.getElementById('quiz-question');
 const quizOptions = document.getElementById('quiz-options');
 const validateQuiz = document.getElementById('validate-quiz');
@@ -391,7 +419,7 @@ function getOtherUserId() {
   return state.currentUser === 'G' ? 'R' : 'G';
 }
 
-function getDaily(user, day = TODAY) {
+function getDaily(user, day = getToday()) {
   if (!user.daily[day]) {
     user.daily[day] = { reading: 0, cards: 0, tested: 0, complete: false };
   }
@@ -411,13 +439,14 @@ function ensureSampleData() {
 
 function checkDayTransition() {
   const now = new Date();
-  if (state.lastUpdate === TODAY) return;
+  const todayKey = getToday();
+  if (state.lastUpdate === todayKey) return;
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const yesterdayKey = getDayKey(yesterday);
   const gDone = getDaily(getUser('G'), yesterdayKey).complete;
   const rDone = getDaily(getUser('R'), yesterdayKey).complete;
-  if (now.getHours() >= 4) {
+  if (now.getHours() >= (state.dayResetHour ?? 4)) {
     if (gDone && rDone) {
       state.streak += 1;
       state.pending = false;
@@ -435,13 +464,13 @@ function checkDayTransition() {
       }
       state.pending = false;
     }
-    state.lastUpdate = TODAY;
+    state.lastUpdate = getToday();
     saveState();
   }
 }
 
 function checkMonthTransition() {
-  const currentMonth = TODAY.slice(0, 7);
+  const currentMonth = getToday().slice(0, 7);
   if (state.lastMonth !== currentMonth) {
     processMonthlyEnd(state.lastMonth);
     state.lastMonth = currentMonth;
@@ -575,7 +604,7 @@ function renderFlashcards() {
   const user = getUser(state.currentUser);
   const today = getDaily(user);
   todayCardsList.innerHTML = '';
-  const cards = user.flashcards.filter(card => card.date === TODAY);
+  const cards = user.flashcards.filter(card => card.date === getToday());
   if (cards.length === 0) {
     todayCardsList.innerHTML = '<div class="history-item"><span>Aucune carte créée aujourd’hui</span></div>';
     return;
@@ -670,6 +699,7 @@ function populateAdminInputs() {
   adminTargetReading.value = state.dailyThresholds.reading;
   adminTargetCards.value = state.dailyThresholds.cards;
   adminTargetTested.value = state.dailyThresholds.tested;
+  adminResetHour.value = state.dayResetHour ?? 4;
   adminGcards.value = g.statsOverride.totalCards ?? '';
   adminGtests.value = g.statsOverride.totalTests ?? '';
   adminGquizzes.value = g.statsOverride.totalQuizzes ?? '';
@@ -689,10 +719,48 @@ function saveAdminChanges() {
   state.dailyThresholds.reading = Number(adminTargetReading.value) || 0;
   state.dailyThresholds.cards = Number(adminTargetCards.value) || 0;
   state.dailyThresholds.tested = Number(adminTargetTested.value) || 0;
+  state.dayResetHour = Number(adminResetHour.value);
   setUserOverrides('G', adminGcards, adminGtests, adminGquizzes, adminGreading, adminGrate);
   setUserOverrides('R', adminRcards, adminRtests, adminRquizzes, adminRreading, adminRate);
   saveState();
   renderApp();
+}
+
+function createAdminFlashcardForOther() {
+  const otherId = getOtherUserId();
+  const otherUser = getUser(otherId);
+  const fallbackQuestion = `Flashcard admin pour ${otherId}`;
+  const newCard = {
+    id: `${otherId}-admin-${Date.now()}`,
+    user: otherId,
+    date: getToday(),
+    question: fallbackQuestion,
+    answer: 'Réponse à remplir',
+    tags: ['admin'],
+    explanation: 'Carte ajoutée depuis le mode admin.',
+    note: 'N’hésite pas à modifier cette carte.',
+    reviews: [],
+    seenBy: []
+  };
+  otherUser.flashcards.push(newCard);
+  const daily = getDaily(otherUser);
+  daily.cards = otherUser.flashcards.filter(card => card.date === getToday()).length;
+  tryCompleteDay(otherUser);
+  saveState();
+  renderApp();
+  alert('Une flashcard a été créée pour l’autre personne.');
+}
+
+function createAdminTestForOther() {
+  const otherId = getOtherUserId();
+  const otherUser = getUser(otherId);
+  otherUser.tests.push({ date: getToday(), count: 1, correct: 1, score: 100 });
+  const daily = getDaily(otherUser);
+  daily.tested = otherUser.tests.filter(test => test.date === getToday()).length;
+  tryCompleteDay(otherUser);
+  saveState();
+  renderApp();
+  alert('Un test a été ajouté pour l’autre personne.');
 }
 
 function setUserOverrides(userId, cardsInput, testsInput, quizzesInput, readingInput, rateInput) {
@@ -907,7 +975,7 @@ function addReading(minutes) {
   const user = getUser(state.currentUser);
   const daily = getDaily(user);
   daily.reading += minutes;
-  user.reading[TODAY] = daily.reading;
+  user.reading[getToday()] = daily.reading;
   tryCompleteDay(user);
   saveState();
   renderApp();
@@ -943,7 +1011,7 @@ function addFlashcard() {
   const newCard = {
     id: `${state.currentUser}-${Date.now()}`,
     user: state.currentUser,
-    date: TODAY,
+    date: getToday(),
     question,
     answer,
     tags,
@@ -954,7 +1022,7 @@ function addFlashcard() {
   };
   user.flashcards.push(newCard);
   const daily = getDaily(user);
-  daily.cards = user.flashcards.filter(card => card.date === TODAY).length;
+  daily.cards = user.flashcards.filter(card => card.date === getToday()).length;
   tryCompleteDay(user);
   saveState();
   resetFlashcardForm();
@@ -974,8 +1042,8 @@ function startReviewSession() {
   const user = getUser(state.currentUser);
   const other = getUser(getOtherUserId());
   const dueCards = user.flashcards.filter(card => shouldReview(card));
-  const newCards = user.flashcards.filter(card => card.date === TODAY);
-  const otherNew = other.flashcards.filter(card => card.date === TODAY);
+  const newCards = user.flashcards.filter(card => card.date === getToday());
+  const otherNew = other.flashcards.filter(card => card.date === getToday());
   reviewQueue = [...newCards, ...otherNew, ...dueCards].slice(0, count);
   if (reviewQueue.length === 0) {
     alert('Aucune carte disponible pour ce test. Crée des flashcards d’abord.');
@@ -999,7 +1067,7 @@ function shouldReview(card) {
   const days = intervals[last.difficulty] || 1;
   const nextDue = new Date(last.date);
   nextDue.setDate(nextDue.getDate() + days);
-  return new Date(TODAY) >= nextDue;
+  return new Date(getToday()) >= nextDue;
 }
 
 function renderReviewCard() {
@@ -1029,7 +1097,7 @@ function revealAnswer() {
 function gradeReview(difficulty) {
   const card = reviewQueue[reviewIndex];
   if (!card.reviews) card.reviews = [];
-  card.reviews.push({ date: TODAY, difficulty, result: difficulty === 'easy' ? 'correct' : 'wrong' });
+  card.reviews.push({ date: getToday(), difficulty, result: difficulty === 'easy' ? 'correct' : 'wrong' });
   if (difficulty === 'easy' || difficulty === 'medium') {
     reviewCorrect += 1;
   }
@@ -1042,9 +1110,9 @@ function finishReviewSession() {
   reviewSummary.classList.remove('hidden');
   reviewResults.textContent = `Tu as répondu correctement à ${reviewCorrect} sur ${reviewQueue.length} cartes.`;
   const user = getUser(state.currentUser);
-  user.tests.push({ date: TODAY, count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100) });
+  user.tests.push({ date: getToday(), count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100) });
   const daily = getDaily(user);
-  daily.tested = user.tests.filter(test => test.date === TODAY).length;
+  daily.tested = user.tests.filter(test => test.date === getToday()).length;
   tryCompleteDay(user);
   saveState();
   renderApp();
@@ -1137,7 +1205,7 @@ function validateQuizAnswer() {
   const question = quizState.questions[quizState.index];
   const correct = quizState.selected === question.answer;
   const user = getUser(state.currentUser);
-  user.quizzes.push({ date: TODAY, questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
+  user.quizzes.push({ date: getToday(), questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
   if (correct) quizState.correct += 1;
   saveState();
   quizState.index += 1;
@@ -1249,7 +1317,7 @@ function finishMonthlyTest() {
   const score = Math.round((monthlyState.correct / monthlyState.questions.length) * 100);
   monthlyResults.textContent = `Score mensuel : ${score}% (${monthlyState.correct}/${monthlyState.questions.length}).`;
   const user = getUser(state.currentUser);
-  user.monthlyTests.push({ date: TODAY, score, total: monthlyState.questions.length });
+  user.monthlyTests.push({ date: getToday(), score, total: monthlyState.questions.length });
   saveState();
   monthlyState = null;
   renderApp();
@@ -1286,6 +1354,8 @@ function attachHandlers() {
   });
   saveAdminSettings.addEventListener('click', saveAdminChanges);
   resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
+  adminAddFlashcardOther.addEventListener('click', createAdminFlashcardForOther);
+  adminAddTestOther.addEventListener('click', createAdminTestForOther);
   viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
   viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
   viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
