@@ -192,19 +192,10 @@
         </div>
         <div class="card small-card quiz-actions-card">
           <div class="quiz-actions-row">
-            <button class="primary-button theme-blue" id="start-quiz">Mini quiz</button>
+            <button class="primary-button theme-blue" id="start-quiz" data-nav="quiz-setup">Mini quiz</button>
             <button class="secondary-button theme-blue" id="show-ib-annales">Annales IBO</button>
             <button class="primary-button theme-orange" id="start-monthly-quick">Test mensuel</button>
           </div>
-        </div>
-        <div class="card small-card quiz-count-card">
-          <label>Nombre de questions</label>
-          <select id="quiz-count">
-            <option value="5">5</option>
-            <option value="10" selected>10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-          </select>
         </div>
         <div class="card small-card import-card">
           <label>Importer annales depuis un fichier JSON</label>
@@ -212,21 +203,6 @@
           <button class="secondary-button" id="import-button">Importer</button>
           <div class="small-note">Le fichier doit contenir une liste de questions avec chapitres et réponses.</div>
           <div class="small-note">Questions dans la banque : <strong id="question-bank-count">0</strong></div>
-        </div>
-        <div class="card quiz-card hidden" id="quiz-card">
-          <div class="quiz-progress-bar hidden" id="quiz-progress-bar">
-            <div class="bar-track"><div class="bar-fill" id="quiz-progress-fill"></div></div>
-            <div class="progress-label" id="quiz-progress-label">0 / 0</div>
-          </div>
-          <div class="question-meta" id="quiz-meta"></div>
-          <div class="question-box" id="quiz-question"></div>
-          <div class="options-list" id="quiz-options"></div>
-          <button class="primary-button" id="validate-quiz">Valider</button>
-        </div>
-        <div class="card small-card hidden" id="quiz-summary">
-          <h3 id="quiz-summary-title">Quiz terminé</h3>
-          <p id="quiz-results"></p>
-          <button class="primary-button" id="finish-quiz">Terminer</button>
         </div>
         <div class="card small-card monthly-card">
           <h3>Test mensuel IBO</h3>
@@ -243,6 +219,53 @@
           <h3>Test mensuel terminé</h3>
           <p id="monthly-results"></p>
           <button class="primary-button" id="finish-monthly">Terminer</button>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-quiz-setup">
+        <div class="page-header">
+          <button class="back-button" data-nav="quiz">← Retour</button>
+          <h2>Mini quiz - paramètres</h2>
+        </div>
+        <div class="card small-card">
+          <label>Chapitre</label>
+          <select id="quiz-chapter">
+            <option value="all">Tous les chapitres</option>
+          </select>
+        </div>
+        <div class="card small-card">
+          <label>Nombre de questions</label>
+          <select id="quiz-count">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+        <div class="card small-card">
+          <button class="primary-button theme-quiz" id="start-quiz-session">Démarrer le mini quiz</button>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-quiz-run">
+        <div class="page-header">
+          <button class="back-button" data-nav="quiz">← Retour</button>
+          <h2>Quiz en cours</h2>
+        </div>
+        <div class="card quiz-card hidden" id="quiz-card">
+          <div class="quiz-progress-bar hidden" id="quiz-progress-bar">
+            <div class="bar-track"><div class="bar-fill" id="quiz-progress-fill"></div></div>
+            <div class="progress-label" id="quiz-progress-label">0 / 0</div>
+          </div>
+          <div class="question-meta" id="quiz-meta"></div>
+          <div class="question-box" id="quiz-question"></div>
+          <div class="options-list" id="quiz-options"></div>
+          <button class="primary-button" id="validate-quiz">Valider</button>
+        </div>
+        <div class="card small-card hidden" id="quiz-summary">
+          <h3>Récapitulatif du quiz</h3>
+          <p id="quiz-results"></p>
+          <button class="primary-button" id="finish-quiz">Terminer</button>
         </div>
       </section>
 

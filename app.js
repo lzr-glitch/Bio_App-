@@ -1,6 +1,6 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
 const TODAY = new Date().toISOString().slice(0, 10);
-const pages = ['home','reading','flashcards','library','test','quiz','profile','stats','chapters','weaknesses','badges','recap','settings'];
+const pages = ['home','reading','flashcards','library','test','quiz','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 const defaultState = {
   currentUser: null,
@@ -75,7 +75,9 @@ const finishReview = document.getElementById('finish-review');
 const importAnnalesInput = document.getElementById('import-annales');
 const importButton = document.getElementById('import-button');
 const questionBankCount = document.getElementById('question-bank-count');
+const quizChapter = document.getElementById('quiz-chapter');
 const quizCount = document.getElementById('quiz-count');
+const startQuizSessionButton = document.getElementById('start-quiz-session');
 const quizCard = document.getElementById('quiz-card');
 const quizProgressBar = document.getElementById('quiz-progress-bar');
 const quizProgressFill = document.getElementById('quiz-progress-fill');
@@ -496,6 +498,8 @@ function applyPageTheme(page) {
     flashcards: 'theme-flashcards',
     test: 'theme-review',
     quiz: 'theme-quiz',
+    'quiz-setup': 'theme-quiz',
+    'quiz-run': 'theme-quiz',
     library: 'theme-library'
   };
   document.body.classList.add(pageTheme[page] || 'theme-default');
@@ -1041,19 +1045,25 @@ function finishReviewSession() {
 }
 
 function startQuizSession() {
+  const chapter = quizChapter.value;
   const count = parseInt(quizCount.value, 10) || 10;
   if (!state.questionBank || state.questionBank.length === 0) {
     return alert('Aucune question disponible. Importez des annales ou réessayez plus tard.');
   }
-  const questions = shuffleArray(state.questionBank).slice(0, Math.min(count, state.questionBank.length));
-  if (questions.length === 0) {
-    return alert('Aucune question disponible pour ce quiz. Importez des annales ou réessayez plus tard.');
+  let questions = state.questionBank.slice();
+  if (chapter && chapter !== 'all') {
+    questions = questions.filter(q => q.chapter === chapter);
   }
-  quizState = { questions, index: 0, selected: null };
+  questions = shuffleArray(questions).slice(0, Math.min(count, questions.length));
+  if (questions.length === 0) {
+    return alert('Aucune question trouvée pour ce chapitre. Choisis un autre chapitre ou importe plus d’annales.');
+  }
+  quizState = { questions, index: 0, selected: null, correct: 0 };
+  goToPage('quiz-run');
   quizCard.classList.remove('hidden');
   quizSummary.classList.add('hidden');
   quizProgressBar.classList.remove('hidden');
-  renderQuizCard();
+  renderQuizRunCard();
 }
 
 function renderQuizCard() {
@@ -1092,6 +1102,27 @@ function selectQuizOption(button, option) {
   Array.from(quizOptions.children).forEach(btn => btn.classList.toggle('active', btn === button));
 }
 
+function renderQuizRunCard() {
+  if (!quizState) return;
+  const question = quizState.questions[quizState.index];
+  quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length}`;
+  quizQuestion.textContent = question.question;
+  quizOptions.innerHTML = '';
+  question.options.forEach(option => {
+    const btn = document.createElement('button');
+    btn.className = 'option-button';
+    btn.type = 'button';
+    btn.textContent = option;
+    btn.addEventListener('click', () => selectQuizOption(btn, option));
+    quizOptions.appendChild(btn);
+  });
+  quizState.selected = null;
+  validateQuiz.disabled = false;
+  quizSummary.classList.add('hidden');
+  quizProgressFill.style.width = `${(quizState.index / quizState.questions.length) * 100}%`;
+  quizProgressLabel.textContent = `${quizState.index + 1} / ${quizState.questions.length}`;
+}
+
 function validateQuizAnswer() {
   if (!quizState || !quizState.selected) {
     alert('Choisis une réponse.');
@@ -1099,33 +1130,34 @@ function validateQuizAnswer() {
   }
   const question = quizState.questions[quizState.index];
   const correct = quizState.selected === question.answer;
-  Array.from(quizOptions.children).forEach(btn => {
-    btn.classList.toggle('correct', btn.textContent === question.answer);
-    if (btn.textContent === quizState.selected && btn.textContent !== question.answer) btn.classList.add('wrong');
-  });
   const user = getUser(state.currentUser);
   user.quizzes.push({ date: TODAY, questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
+  if (correct) quizState.correct += 1;
   saveState();
-  quizSummaryTitle.textContent = quizState.index + 1 >= quizState.questions.length ? 'Quiz terminé' : 'Résultat';
-  quizResults.textContent = correct ? 'Bonne réponse !' : `Mauvaise réponse. La réponse était ${question.answer}.`;
-  finishQuiz.textContent = quizState.index + 1 >= quizState.questions.length ? 'Terminer' : 'Suivant';
-  validateQuiz.disabled = true;
-  quizSummary.classList.remove('hidden');
-}
-
-function advanceQuizSession() {
-  if (!quizState) return;
-  if (quizState.index + 1 < quizState.questions.length) {
-    quizState.index += 1;
-    quizState.selected = null;
-    renderQuizCard();
+  quizState.index += 1;
+  if (quizState.index < quizState.questions.length) {
+    renderQuizRunCard();
     return;
   }
+  showQuizSummary();
+}
+
+function showQuizSummary() {
   quizCard.classList.add('hidden');
   quizProgressBar.classList.add('hidden');
+  quizSummary.classList.remove('hidden');
+  const correct = quizState.correct;
+  const total = quizState.questions.length;
+  const wrong = total - correct;
+  const percent = total ? Math.round((correct / total) * 100) : 0;
+  quizResults.textContent = `Réussi : ${correct}, ratés : ${wrong}, ${percent}% de bonnes réponses.`;
+}
+
+function finishQuizSession() {
   quizSummary.classList.add('hidden');
+  quizCard.classList.add('hidden');
   quizState = null;
-  renderApp();
+  goToPage('quiz');
 }
 
 function importAnnales() {
@@ -1153,6 +1185,10 @@ function importAnnales() {
 
 function renderQuizStatus() {
   questionBankCount.textContent = state.questionBank.length;
+  if (quizChapter) {
+    const chapters = [...new Set(state.questionBank.map(q => q.chapter).filter(Boolean))].sort();
+    quizChapter.innerHTML = '<option value="all">Tous les chapitres</option>' + chapters.map(ch => `<option value="${ch}">${ch}</option>`).join('');
+  }
 }
 
 function startMonthlyTest() {
@@ -1265,9 +1301,9 @@ function attachHandlers() {
     reviewSummary.classList.add('hidden');
     renderApp();
   });
-  startQuiz.addEventListener('click', startQuizSession);
+  startQuizSessionButton.addEventListener('click', startQuizSession);
   validateQuiz.addEventListener('click', validateQuizAnswer);
-  finishQuiz.addEventListener('click', advanceQuizSession);
+  finishQuiz.addEventListener('click', finishQuizSession);
   importButton.addEventListener('click', importAnnales);
   startMonthly.addEventListener('click', startMonthlyTest);
   validateMonthly.addEventListener('click', validateMonthlyAnswer);
@@ -1319,6 +1355,10 @@ function init() {
 
 function renderQuizStatus() {
   questionBankCount.textContent = state.questionBank.length;
+  if (quizChapter) {
+    const chapters = [...new Set(state.questionBank.map(q => q.chapter).filter(Boolean))].sort();
+    quizChapter.innerHTML = '<option value="all">Tous les chapitres</option>' + chapters.map(ch => `<option value="${ch}">${ch}</option>`).join('');
+  }
 }
 
 function shuffleArray(array) {
