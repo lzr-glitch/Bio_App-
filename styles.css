@@ -353,8 +353,19 @@ button, input, textarea, select {
   font-size: 0.95rem;
 }
 
-.flashcard-target-hint.hidden {
+.flashcard-target-hint.hidden,
+.page-hint.hidden {
   display: none;
+}
+
+.page-hint {
+  color: var(--primary-dark);
+  margin: 0 0 16px;
+  padding: 14px 18px;
+  border-radius: 22px;
+  background: rgba(88, 204, 2, 0.08);
+  border: 1px solid rgba(88, 204, 2, 0.18);
+  font-size: 0.95rem;
 }
 
 .admin-action-feedback.hidden {

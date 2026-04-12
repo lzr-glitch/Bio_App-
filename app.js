@@ -126,6 +126,7 @@ const finishQuiz = document.getElementById('finish-quiz');
 const startMonthly = document.getElementById('start-monthly');
 const monthlyCard = document.getElementById('monthly-card');
 const monthlyMeta = document.getElementById('monthly-meta');
+const statsTargetHint = document.getElementById('stats-target-hint');
 const monthlyQuestion = document.getElementById('monthly-question');
 const monthlyOptions = document.getElementById('monthly-options');
 const validateMonthly = document.getElementById('validate-monthly');
@@ -817,6 +818,7 @@ let badgesTarget = null;
 function renderStats() {
   const targetUser = statsTarget ? getUser(statsTarget) : getUser(state.currentUser);
   document.querySelector('#page-stats h2').textContent = `Statistiques de ${targetUser.name}`;
+  setStatsTargetHint(targetUser);
   statsCharts.innerHTML = '';
   const days = getLastDays(7).reverse();
   const me = targetUser;
@@ -838,6 +840,12 @@ function renderStats() {
 function createBar(label, value, max) {
   const width = Math.min(100, Math.round((value / max) * 100));
   return `<div class="bar-row"><span>${label} ${value}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div></div>`;
+}
+
+function setStatsTargetHint(targetUser) {
+  if (!statsTargetHint) return;
+  statsTargetHint.textContent = `Tu regardes les statistiques de ${targetUser.name}.`;
+  statsTargetHint.classList.toggle('hidden', !statsTarget);
 }
 
 function renderChapters() {
