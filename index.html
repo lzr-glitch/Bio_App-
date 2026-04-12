@@ -197,6 +197,15 @@
             <button class="primary-button theme-orange" id="start-monthly-quick">Test mensuel</button>
           </div>
         </div>
+        <div class="card small-card quiz-count-card">
+          <label>Nombre de questions</label>
+          <select id="quiz-count">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </div>
         <div class="card small-card import-card">
           <label>Importer annales depuis un fichier JSON</label>
           <input type="file" id="import-annales" accept="application/json" />
@@ -205,13 +214,17 @@
           <div class="small-note">Questions dans la banque : <strong id="question-bank-count">0</strong></div>
         </div>
         <div class="card quiz-card hidden" id="quiz-card">
+          <div class="quiz-progress-bar hidden" id="quiz-progress-bar">
+            <div class="bar-track"><div class="bar-fill" id="quiz-progress-fill"></div></div>
+            <div class="progress-label" id="quiz-progress-label">0 / 0</div>
+          </div>
           <div class="question-meta" id="quiz-meta"></div>
           <div class="question-box" id="quiz-question"></div>
           <div class="options-list" id="quiz-options"></div>
           <button class="primary-button" id="validate-quiz">Valider</button>
         </div>
         <div class="card small-card hidden" id="quiz-summary">
-          <h3>Quiz terminé</h3>
+          <h3 id="quiz-summary-title">Quiz terminé</h3>
           <p id="quiz-results"></p>
           <button class="primary-button" id="finish-quiz">Terminer</button>
         </div>
@@ -266,12 +279,39 @@
             </div>
           </div>
         </div>
-      </section>
-
-      <section class="page hidden" id="page-stats">
-        <div class="page-header">
-          <button class="back-button" data-nav="home">← Retour</button>
-          <h2>Statistiques</h2>
+        <div class="card admin-panel hidden" id="admin-panel">
+          <h3>Mode admin (R)</h3>
+          <div class="admin-grid">
+            <div class="admin-control"><label>Streak commun</label><input type="number" id="admin-streak" min="0" /></div>
+            <div class="admin-control"><label>Jokers G</label><input type="number" id="admin-jokers-g" min="0" /></div>
+            <div class="admin-control"><label>Jokers R</label><input type="number" id="admin-jokers-r" min="0" /></div>
+            <div class="admin-control"><label>Lecture min quotidienne</label><input type="number" id="admin-target-reading" min="0" /></div>
+            <div class="admin-control"><label>Flashcards min quotidiennes</label><input type="number" id="admin-target-cards" min="0" /></div>
+            <div class="admin-control"><label>Tests min quotidiens</label><input type="number" id="admin-target-tested" min="0" /></div>
+          </div>
+          <div class="admin-stats-grid">
+            <div>
+              <h4>Stats G</h4>
+              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-g-cards" min="0" /></div>
+              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-g-tests" min="0" /></div>
+              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-g-quizzes" min="0" /></div>
+              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-g-reading" min="0" /></div>
+              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-g-rate" min="0" max="100" /></div>
+            </div>
+            <div>
+              <h4>Stats R</h4>
+              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-r-cards" min="0" /></div>
+              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-r-tests" min="0" /></div>
+              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-r-quizzes" min="0" /></div>
+              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-r-reading" min="0" /></div>
+              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-r-rate" min="0" max="100" /></div>
+            </div>
+          </div>
+          <div class="admin-actions">
+            <button class="primary-button" id="save-admin-settings">Appliquer</button>
+            <button class="secondary-button" id="reset-admin-overrides">Réinitialiser</button>
+          </div>
+        </div>
         </div>
         <div class="card stats-card">
           <h3>7 derniers jours</h3>

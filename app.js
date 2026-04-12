@@ -10,9 +10,10 @@ const defaultState = {
   lastUpdate: TODAY,
   lastMonth: new Date().toISOString().slice(0, 7),
   jokers: 0,
+  dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [] },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [] }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {} },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {} }
   },
   questionBank: []
 };
@@ -74,13 +75,18 @@ const finishReview = document.getElementById('finish-review');
 const importAnnalesInput = document.getElementById('import-annales');
 const importButton = document.getElementById('import-button');
 const questionBankCount = document.getElementById('question-bank-count');
-const startQuiz = document.getElementById('start-quiz');
+const quizCount = document.getElementById('quiz-count');
 const quizCard = document.getElementById('quiz-card');
+const quizProgressBar = document.getElementById('quiz-progress-bar');
+const quizProgressFill = document.getElementById('quiz-progress-fill');
+const quizProgressLabel = document.getElementById('quiz-progress-label');
+const startQuiz = document.getElementById('start-quiz');
 const quizMeta = document.getElementById('quiz-meta');
 const quizQuestion = document.getElementById('quiz-question');
 const quizOptions = document.getElementById('quiz-options');
 const validateQuiz = document.getElementById('validate-quiz');
 const quizSummary = document.getElementById('quiz-summary');
+const quizSummaryTitle = document.getElementById('quiz-summary-title');
 const quizResults = document.getElementById('quiz-results');
 const finishQuiz = document.getElementById('finish-quiz');
 
@@ -123,6 +129,25 @@ const viewMyStats = document.getElementById('view-my-stats');
 const viewMyBadges = document.getElementById('view-my-badges');
 const viewOtherStats = document.getElementById('view-other-stats');
 const viewOtherBadges = document.getElementById('view-other-badges');
+const adminPanel = document.getElementById('admin-panel');
+const adminStreak = document.getElementById('admin-streak');
+const adminJokersG = document.getElementById('admin-jokers-g');
+const adminJokersR = document.getElementById('admin-jokers-r');
+const adminTargetReading = document.getElementById('admin-target-reading');
+const adminTargetCards = document.getElementById('admin-target-cards');
+const adminTargetTested = document.getElementById('admin-target-tested');
+const adminGcards = document.getElementById('admin-g-cards');
+const adminGtests = document.getElementById('admin-g-tests');
+const adminGquizzes = document.getElementById('admin-g-quizzes');
+const adminGreading = document.getElementById('admin-g-reading');
+const adminGrate = document.getElementById('admin-g-rate');
+const adminRcards = document.getElementById('admin-r-cards');
+const adminRtests = document.getElementById('admin-r-tests');
+const adminRquizzes = document.getElementById('admin-r-quizzes');
+const adminRreading = document.getElementById('admin-r-reading');
+const adminRate = document.getElementById('admin-r-rate');
+const saveAdminSettings = document.getElementById('save-admin-settings');
+const resetAdminOverrides = document.getElementById('reset-admin-overrides');
 
 let timerInterval = null;
 let timerSeconds = 0;
@@ -590,22 +615,93 @@ function renderLibrary() {
 function renderProfile() {
   const user = getUser(state.currentUser);
   const other = getUser(getOtherUserId());
-  const userStats = computeStats(user);
-  const otherStats = computeStats(other);
+  const userDisplay = getProfileDisplayStats(user);
+  const otherDisplay = getProfileDisplayStats(other);
   myJokers.textContent = user.jokers;
-  myTotalCards.textContent = user.flashcards.length;
-  myWeekCards.textContent = userStats.weekCards;
-  myTotalTests.textContent = user.tests.length;
-  myTotalQuizzes.textContent = user.quizzes.length;
-  mySuccessRate.textContent = `${userStats.successRate}%`;
-  myTotalReading.textContent = `${Object.values(user.reading).reduce((sum, v) => sum + v, 0)} min`;
+  myTotalCards.textContent = userDisplay.totalCards;
+  myWeekCards.textContent = userDisplay.weekCards;
+  myTotalTests.textContent = userDisplay.totalTests;
+  myTotalQuizzes.textContent = userDisplay.totalQuizzes;
+  mySuccessRate.textContent = `${userDisplay.successRate}%`;
+  myTotalReading.textContent = `${userDisplay.totalReading} min`;
   otherJokers.textContent = other.jokers;
-  otherTotalCards.textContent = other.flashcards.length;
-  otherWeekCards.textContent = otherStats.weekCards;
-  otherTotalTests.textContent = other.tests.length;
-  otherTotalQuizzes.textContent = other.quizzes.length;
-  otherSuccessRate.textContent = `${otherStats.successRate}%`;
-  otherTotalReading.textContent = `${Object.values(other.reading).reduce((sum, v) => sum + v, 0)} min`;
+  otherTotalCards.textContent = otherDisplay.totalCards;
+  otherWeekCards.textContent = otherDisplay.weekCards;
+  otherTotalTests.textContent = otherDisplay.totalTests;
+  otherTotalQuizzes.textContent = otherDisplay.totalQuizzes;
+  otherSuccessRate.textContent = `${otherDisplay.successRate}%`;
+  otherTotalReading.textContent = `${otherDisplay.totalReading} min`;
+  adminPanel.classList.toggle('hidden', state.currentUser !== 'R');
+  if (state.currentUser === 'R') {
+    populateAdminInputs();
+  }
+}
+
+function getProfileDisplayStats(user) {
+  const override = user.statsOverride || {};
+  const baseStats = computeStats(user);
+  const totalReading = override.totalReading != null ? override.totalReading : Object.values(user.reading).reduce((sum, v) => sum + v, 0);
+  return {
+    totalCards: override.totalCards != null ? override.totalCards : user.flashcards.length,
+    weekCards: override.weekCards != null ? override.weekCards : baseStats.weekCards,
+    totalTests: override.totalTests != null ? override.totalTests : user.tests.length,
+    totalQuizzes: override.totalQuizzes != null ? override.totalQuizzes : user.quizzes.length,
+    successRate: override.successRate != null ? override.successRate : baseStats.successRate,
+    totalReading
+  };
+}
+
+function populateAdminInputs() {
+  const g = getUser('G');
+  const r = getUser('R');
+  adminStreak.value = state.streak;
+  adminJokersG.value = g.jokers;
+  adminJokersR.value = r.jokers;
+  adminTargetReading.value = state.dailyThresholds.reading;
+  adminTargetCards.value = state.dailyThresholds.cards;
+  adminTargetTested.value = state.dailyThresholds.tested;
+  adminGcards.value = g.statsOverride.totalCards ?? '';
+  adminGtests.value = g.statsOverride.totalTests ?? '';
+  adminGquizzes.value = g.statsOverride.totalQuizzes ?? '';
+  adminGreading.value = g.statsOverride.totalReading ?? '';
+  adminGrate.value = g.statsOverride.successRate ?? '';
+  adminRcards.value = r.statsOverride.totalCards ?? '';
+  adminRtests.value = r.statsOverride.totalTests ?? '';
+  adminRquizzes.value = r.statsOverride.totalQuizzes ?? '';
+  adminRreading.value = r.statsOverride.totalReading ?? '';
+  adminRate.value = r.statsOverride.successRate ?? '';
+}
+
+function saveAdminChanges() {
+  state.streak = Number(adminStreak.value) || 0;
+  getUser('G').jokers = Number(adminJokersG.value) || 0;
+  getUser('R').jokers = Number(adminJokersR.value) || 0;
+  state.dailyThresholds.reading = Number(adminTargetReading.value) || 0;
+  state.dailyThresholds.cards = Number(adminTargetCards.value) || 0;
+  state.dailyThresholds.tested = Number(adminTargetTested.value) || 0;
+  setUserOverrides('G', adminGcards, adminGtests, adminGquizzes, adminGreading, adminGrate);
+  setUserOverrides('R', adminRcards, adminRtests, adminRquizzes, adminRreading, adminRate);
+  saveState();
+  renderApp();
+}
+
+function setUserOverrides(userId, cardsInput, testsInput, quizzesInput, readingInput, rateInput) {
+  const user = getUser(userId);
+  user.statsOverride = {
+    totalCards: cardsInput.value ? Number(cardsInput.value) : null,
+    totalTests: testsInput.value ? Number(testsInput.value) : null,
+    totalQuizzes: quizzesInput.value ? Number(quizzesInput.value) : null,
+    totalReading: readingInput.value ? Number(readingInput.value) : null,
+    successRate: rateInput.value ? Number(rateInput.value) : null
+  };
+}
+
+function resetAdminOverridesToDefault() {
+  getUser('G').statsOverride = {};
+  getUser('R').statsOverride = {};
+  populateAdminInputs();
+  saveState();
+  renderApp();
 }
 
 function showProfileStats(userKey) {
@@ -817,7 +913,8 @@ function addManualReading() {
 
 function tryCompleteDay(user) {
   const daily = getDaily(user);
-  if (daily.reading >= 5 && daily.cards >= 3 && daily.tested >= 1) {
+  const thresholds = state.dailyThresholds || { reading: 5, cards: 3, tested: 1 };
+  if (daily.reading >= thresholds.reading && daily.cards >= thresholds.cards && daily.tested >= thresholds.tested) {
     daily.complete = true;
   }
 }
@@ -944,21 +1041,41 @@ function finishReviewSession() {
 }
 
 function startQuizSession() {
-  const question = pickRandomQuestion();
-  if (!question) return alert('Aucune question disponible. Importez des annales ou réessayez plus tard.');
-  quizState = { question, selected: null };
+  const count = parseInt(quizCount.value, 10) || 10;
+  if (!state.questionBank || state.questionBank.length === 0) {
+    return alert('Aucune question disponible. Importez des annales ou réessayez plus tard.');
+  }
+  const questions = shuffleArray(state.questionBank).slice(0, Math.min(count, state.questionBank.length));
+  if (questions.length === 0) {
+    return alert('Aucune question disponible pour ce quiz. Importez des annales ou réessayez plus tard.');
+  }
+  quizState = { questions, index: 0, selected: null };
   quizCard.classList.remove('hidden');
   quizSummary.classList.add('hidden');
-  quizMeta.textContent = `${question.chapter} • ${question.theme}`;
+  quizProgressBar.classList.remove('hidden');
+  renderQuizCard();
+}
+
+function renderQuizCard() {
+  if (!quizState) return;
+  const question = quizState.questions[quizState.index];
+  quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length}`;
   quizQuestion.textContent = question.question;
   quizOptions.innerHTML = '';
   question.options.forEach(option => {
     const btn = document.createElement('button');
+    btn.className = 'option-button';
     btn.type = 'button';
     btn.textContent = option;
     btn.addEventListener('click', () => selectQuizOption(btn, option));
     quizOptions.appendChild(btn);
   });
+  quizState.selected = null;
+  Array.from(quizOptions.children).forEach(btn => btn.classList.remove('correct', 'wrong', 'active'));
+  validateQuiz.disabled = false;
+  quizSummary.classList.add('hidden');
+  quizProgressFill.style.width = `${((quizState.index) / quizState.questions.length) * 100}%`;
+  quizProgressLabel.textContent = `${quizState.index + 1} / ${quizState.questions.length}`;
 }
 
 function showIBAnnales() {
@@ -980,21 +1097,34 @@ function validateQuizAnswer() {
     alert('Choisis une réponse.');
     return;
   }
-  const correct = quizState.selected === quizState.question.answer;
+  const question = quizState.questions[quizState.index];
+  const correct = quizState.selected === question.answer;
   Array.from(quizOptions.children).forEach(btn => {
-    btn.classList.toggle('correct', btn.textContent === quizState.question.answer);
-    if (btn.textContent === quizState.selected && btn.textContent !== quizState.question.answer) btn.classList.add('wrong');
+    btn.classList.toggle('correct', btn.textContent === question.answer);
+    if (btn.textContent === quizState.selected && btn.textContent !== question.answer) btn.classList.add('wrong');
   });
   const user = getUser(state.currentUser);
-  user.quizzes.push({ date: TODAY, questionId: quizState.question.id, correct, score: correct ? 100 : 0, chapter: quizState.question.chapter });
+  user.quizzes.push({ date: TODAY, questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
   saveState();
-  quizResults.textContent = correct ? 'Bonne réponse !' : `Mauvaise réponse. La réponse était ${quizState.question.answer}.`;
+  quizSummaryTitle.textContent = quizState.index + 1 >= quizState.questions.length ? 'Quiz terminé' : 'Résultat';
+  quizResults.textContent = correct ? 'Bonne réponse !' : `Mauvaise réponse. La réponse était ${question.answer}.`;
+  finishQuiz.textContent = quizState.index + 1 >= quizState.questions.length ? 'Terminer' : 'Suivant';
+  validateQuiz.disabled = true;
   quizSummary.classList.remove('hidden');
 }
 
-function finishQuizSession() {
+function advanceQuizSession() {
+  if (!quizState) return;
+  if (quizState.index + 1 < quizState.questions.length) {
+    quizState.index += 1;
+    quizState.selected = null;
+    renderQuizCard();
+    return;
+  }
   quizCard.classList.add('hidden');
+  quizProgressBar.classList.add('hidden');
   quizSummary.classList.add('hidden');
+  quizState = null;
   renderApp();
 }
 
@@ -1112,6 +1242,8 @@ function attachHandlers() {
   importAnnalesInput.addEventListener('change', () => {
     if (importAnnalesInput.files.length) importAnnales();
   });
+  saveAdminSettings.addEventListener('click', saveAdminChanges);
+  resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
   viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
   viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
   viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
@@ -1135,7 +1267,7 @@ function attachHandlers() {
   });
   startQuiz.addEventListener('click', startQuizSession);
   validateQuiz.addEventListener('click', validateQuizAnswer);
-  finishQuiz.addEventListener('click', finishQuizSession);
+  finishQuiz.addEventListener('click', advanceQuizSession);
   importButton.addEventListener('click', importAnnales);
   startMonthly.addEventListener('click', startMonthlyTest);
   validateMonthly.addEventListener('click', validateMonthlyAnswer);
