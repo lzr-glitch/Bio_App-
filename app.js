@@ -1354,14 +1354,25 @@ function attachHandlers() {
   });
   saveAdminSettings.addEventListener('click', saveAdminChanges);
   resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
-  adminAddFlashcardOther.addEventListener('click', (event) => {
-    event.stopPropagation();
-    createAdminFlashcardForOther();
-  });
-  adminAddTestOther.addEventListener('click', (event) => {
-    event.stopPropagation();
-    createAdminTestForOther();
-  });
+  if (adminAddFlashcardOther) {
+    adminAddFlashcardOther.addEventListener('click', () => createAdminFlashcardForOther());
+  }
+  if (adminAddTestOther) {
+    adminAddTestOther.addEventListener('click', () => createAdminTestForOther());
+  }
+  if (adminPanel) {
+    adminPanel.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.id === 'admin-add-flashcard-other') {
+        event.preventDefault();
+        createAdminFlashcardForOther();
+      } else if (button.id === 'admin-add-test-other') {
+        event.preventDefault();
+        createAdminTestForOther();
+      }
+    });
+  }
   viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
   viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
   viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
