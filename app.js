@@ -192,6 +192,7 @@ let reviewIndex = 0;
 let reviewCorrect = 0;
 let quizState = null;
 let monthlyState = null;
+let currentLibraryGroup = null;
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -628,7 +629,7 @@ function renderLibrary() {
   const other = getUser(getOtherUserId());
   const filter = librarySearch.value.trim().toLowerCase();
   const sort = librarySort.value;
-  const cards = [...user.flashcards, ...other.flashcards].sort((a,b) => {
+  const cards = [...user.flashcards, ...other.flashcards].sort((a, b) => {
     if (sort === 'tag') return a.tags[0].localeCompare(b.tags[0]);
     if (sort === 'user') return a.user.localeCompare(b.user);
     return b.date.localeCompare(a.date);
@@ -636,11 +637,91 @@ function renderLibrary() {
     if (!filter) return true;
     return [card.question, card.answer, ...card.tags].some(text => text.toLowerCase().includes(filter));
   });
+
+  if (sort !== (currentLibraryGroup?.sort ?? sort)) {
+    currentLibraryGroup = null;
+  }
+
   libraryList.innerHTML = '';
   if (cards.length === 0) {
     libraryList.innerHTML = '<div class="library-card"><span>Aucune carte correspondante.</span></div>';
     return;
   }
+
+  if (currentLibraryGroup && currentLibraryGroup.sort === sort) {
+    const back = document.createElement('div');
+    back.className = 'library-card';
+    back.innerHTML = `<span>Retour aux ${sort === 'tag' ? 'tags' : sort === 'user' ? 'auteurs' : 'dates'}</span><strong>Clique pour revenir</strong>`;
+    back.style.cursor = 'pointer';
+    back.addEventListener('click', () => {
+      currentLibraryGroup = null;
+      renderLibrary();
+    });
+    libraryList.appendChild(back);
+
+    const groupCards = cards.filter(card => {
+      if (sort === 'tag') return card.tags.includes(currentLibraryGroup.key);
+      if (sort === 'user') return card.user === currentLibraryGroup.key;
+      return card.date === currentLibraryGroup.key;
+    });
+
+    groupCards.forEach(card => {
+      const item = document.createElement('div');
+      item.className = 'library-card';
+      item.innerHTML = `<span>${card.user === state.currentUser ? 'Moi' : 'Autre'} • ${card.date}</span>
+        <strong>${card.question}</strong>
+        <p>${card.answer}</p>
+        <small>${card.tags.join(', ')}</small>
+        <p>${card.explanation}</p>`;
+      libraryList.appendChild(item);
+    });
+    return;
+  }
+
+  if (sort === 'tag' || sort === 'user' || sort === 'date') {
+    const groups = new Map();
+    cards.forEach(card => {
+      if (sort === 'tag') {
+        card.tags.forEach(tag => {
+          const entry = groups.get(tag) || { key: tag, count: 0 };
+          entry.count += 1;
+          groups.set(tag, entry);
+        });
+      } else if (sort === 'user') {
+        const key = card.user;
+        const entry = groups.get(key) || { key, count: 0 };
+        entry.count += 1;
+        groups.set(key, entry);
+      } else {
+        const key = card.date;
+        const entry = groups.get(key) || { key, count: 0 };
+        entry.count += 1;
+        groups.set(key, entry);
+      }
+    });
+
+    const sortedGroups = [...groups.values()].sort((a, b) => {
+      if (sort === 'date') return b.key.localeCompare(a.key);
+      const valueA = sort === 'user' ? (a.key === state.currentUser ? 'Moi' : 'Autre') : a.key;
+      const valueB = sort === 'user' ? (b.key === state.currentUser ? 'Moi' : 'Autre') : b.key;
+      return valueA.localeCompare(valueB, 'fr', { sensitivity: 'base' });
+    });
+
+    sortedGroups.forEach(group => {
+      const item = document.createElement('div');
+      item.className = 'library-card';
+      const label = sort === 'user' ? (group.key === state.currentUser ? 'Moi' : 'Autre') : group.key;
+      item.innerHTML = `<span>${label}</span><strong>${group.count} flashcard${group.count > 1 ? 's' : ''}</strong>`;
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', () => {
+        currentLibraryGroup = { sort, key: group.key };
+        renderLibrary();
+      });
+      libraryList.appendChild(item);
+    });
+    return;
+  }
+
   cards.forEach(card => {
     const item = document.createElement('div');
     item.className = 'library-card';
@@ -1406,8 +1487,14 @@ function attachHandlers() {
   setMinutes.addEventListener('click', addManualReading);
   saveCardBtn.addEventListener('click', addFlashcard);
   clearCardBtn.addEventListener('click', resetFlashcardForm);
-  librarySearch.addEventListener('input', renderLibrary);
-  librarySort.addEventListener('change', renderLibrary);
+  librarySearch.addEventListener('input', () => {
+    currentLibraryGroup = null;
+    renderLibrary();
+  });
+  librarySort.addEventListener('change', () => {
+    currentLibraryGroup = null;
+    renderLibrary();
+  });
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
   easyBtn.addEventListener('click', () => gradeReview('easy'));
