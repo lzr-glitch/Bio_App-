@@ -8,7 +8,6 @@ function getDayKeyFor(date = new Date(), resetHour = 4) {
   }
   return toLocalDateKey(local);
 }
-
 const defaultState = {
   currentUser: null,
   streak: 0,
@@ -860,7 +859,7 @@ function saveWorkNote(sendToOther) {
     if (!other.workHistory) other.workHistory = [];
     other.workHistory.unshift({
       id: `work-received-${Date.now()}`,
-      date: new Date().toLocaleString('fr-FR'),
+      date: new Date().toISOString(),
       duration: currentWorkSession.duration,
       note,
       sentFrom: state.currentUser,
@@ -1052,12 +1051,14 @@ function renderStats() {
     const readingCount = me.reading[day] || 0;
     const cardCount = me.flashcards.filter(card => card.date === day).length;
     const tests = me.tests.filter(test => test.date === day).length + me.quizzes.filter(quiz => quiz.date === day).length;
+    const workTime = sumWorkLast7(me);
     const row = document.createElement('div');
     row.className = 'bar-row';
     row.innerHTML = `<strong>${day}</strong><div style="display:grid;gap:8px;flex:1">
       ${createBar('Lecture', readingCount, 60)}
       ${createBar('Flashcards', cardCount, 8)}
       ${createBar('Tests', tests, 4)}
+      ${createBar('Travail', workTime, 120)}
     </div>`;
     statsCharts.appendChild(row);
   });
@@ -1157,8 +1158,8 @@ function averageQuizScore(user) {
 }
 
 function determineWeeklyWinner(user, other) {
-  const scoreUser = sumLast7(user.reading) + user.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
-  const scoreOther = sumLast7(other.reading) + other.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (other.tests.filter(test => getLastDays(7).includes(test.date)).length + other.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
+  const scoreUser = sumWorkLast7(user) + sumLast7(user.reading) + user.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
+  const scoreOther = sumWorkLast7(other) + sumLast7(other.reading) + other.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (other.tests.filter(test => getLastDays(7).includes(test.date)).length + other.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
   if (scoreUser === scoreOther) return 'Match nul';
   return scoreUser > scoreOther ? 'Toi' : 'Autre personne';
 }
