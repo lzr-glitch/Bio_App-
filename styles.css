@@ -286,7 +286,7 @@ button, input, textarea, select {
 
 .tile-button.theme-read { background: #1f6d2a; }
 .tile-button.theme-flashcards { background: #f97316; }
-..tile-button.theme-review { background: #3b82f6; }
+.tile-button.theme-review { background: #3b82f6; }
 .tile-button.theme-quiz { background: #8b5cf6; }
 .tile-button.theme-library { background: #ef4444; }
 .tile-button.theme-work { background: #f59e0b; }
