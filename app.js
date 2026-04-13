@@ -484,7 +484,7 @@ function checkDayTransition() {
         streakHint.textContent = 'Streak sauvé par un joker.';
       } else {
         state.streak = 0;
-        streakHint.textContent = 'Streak perdu, aucune journée valida.';
+        streakHint.textContent = 'Streak perdu, aucune journée validée.';
       }
       state.pending = false;
     }
@@ -594,6 +594,16 @@ function renderApp() {
   renderBadges();
   renderRecap();
   renderQuizStatus();
+}
+
+function sumWorkLast7(user) {
+  const last7 = getLastDays(7);
+  return (user.workHistory || [])
+    .filter(entry => {
+      const day = new Date(entry.date).toISOString().slice(0,10);
+      return last7.includes(day);
+    })
+    .reduce((sum, entry) => sum + Math.floor(entry.duration / 60), 0); // en minutes
 }
 
 function updateHome() {
