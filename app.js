@@ -840,13 +840,13 @@ function saveWorkNote(sendToOther) {
   if (!currentWorkSession) {
     currentWorkSession = { duration: workTimerSeconds, finished: true };
   }
-  if (!currentWorkSession.finished) return;
+  if (!currentWorkSession) return;
   const user = getUser(state.currentUser);
   if (!user.workHistory) user.workHistory = [];
   const note = workNoteText.value.trim();
   const entry = {
     id: `work-${Date.now()}`,
-    date: new Date().toLocaleString('fr-FR'),
+    date: new Date().toISOString(),
     duration: currentWorkSession.duration,
     note,
     sentToOther,
@@ -1667,15 +1667,26 @@ function attachHandlers() {
     event.preventDefault();
     stopWorkTimer();
   });
-  if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    saveWorkNote(true);
-  });
-  if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
+  //if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
+    //event.preventDefault();
+    //event.stopPropagation();
+    //saveWorkNote(true);
+  //});
+  //if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
+    //event.preventDefault();
+    //event.stopPropagation();
+    //saveWorkNote(false);
+  //});
+  document.addEventListener('click', (e) => {
+  if (e.target.id === 'work-note-save') {
+    console.log("SAVE CLICK");
     saveWorkNote(false);
+  }
+
+  if (e.target.id === 'work-note-send') {
+    console.log("SEND CLICK");
+    saveWorkNote(true);
+  }
   });
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
@@ -1751,3 +1762,5 @@ function shuffleArray(array) {
 }
 
 init();
+
+if (workNoteSend) workNoteSend.addEventListener
