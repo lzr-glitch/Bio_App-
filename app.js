@@ -1611,7 +1611,8 @@ function attachHandlers() {
     currentLibraryGroup = null;
     renderLibrary();
   });
-  if (workStartButton) workStartButton.addEventListener('click', () => {
+  if (workStartButton) workStartButton.addEventListener('click', (event) => {
+    event.preventDefault();
     workTimerCard.classList.remove('hidden');
     workNoteCard.classList.add('hidden');
     workTimerSeconds = 0;
@@ -1620,12 +1621,30 @@ function attachHandlers() {
     currentWorkSession = null;
     renderWorkHistory();
   });
-  if (workHistoryButton) workHistoryButton.addEventListener('click', showWorkHistory);
-  if (workTimerStart) workTimerStart.addEventListener('click', startWorkTimer);
-  if (workTimerPause) workTimerPause.addEventListener('click', pauseWorkTimer);
-  if (workTimerStop) workTimerStop.addEventListener('click', stopWorkTimer);
-  if (workNoteSend) workNoteSend.addEventListener('click', () => saveWorkNote(true));
-  if (workNoteSave) workNoteSave.addEventListener('click', () => saveWorkNote(false));
+  if (workHistoryButton) workHistoryButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    showWorkHistory();
+  });
+  if (workTimerStart) workTimerStart.addEventListener('click', (event) => {
+    event.preventDefault();
+    startWorkTimer();
+  });
+  if (workTimerPause) workTimerPause.addEventListener('click', (event) => {
+    event.preventDefault();
+    pauseWorkTimer();
+  });
+  if (workTimerStop) workTimerStop.addEventListener('click', (event) => {
+    event.preventDefault();
+    stopWorkTimer();
+  });
+  if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveWorkNote(true);
+  });
+  if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveWorkNote(false);
+  });
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
   easyBtn.addEventListener('click', () => gradeReview('easy'));
