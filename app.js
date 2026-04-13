@@ -835,21 +835,37 @@ function saveWorkNote(sendToOther) {
   const user = getUser(state.currentUser);
   if (!user.workHistory) user.workHistory = [];
   const note = workNoteText.value.trim();
-  user.workHistory.unshift({
+  const entry = {
     id: `work-${Date.now()}`,
     date: new Date().toLocaleString('fr-FR'),
     duration: currentWorkSession.duration,
     note,
     sentToOther,
-    createdBy: state.currentUser
-  });
+    createdBy: state.currentUser,
+    shared: sendToOther
+  };
+  user.workHistory.unshift(entry);
+  if (sendToOther) {
+    const other = getUser(getOtherUserId());
+    if (!other.workHistory) other.workHistory = [];
+    other.workHistory.unshift({
+      id: `work-received-${Date.now()}`,
+      date: new Date().toLocaleString('fr-FR'),
+      duration: currentWorkSession.duration,
+      note,
+      sentFrom: state.currentUser,
+      received: true,
+      shared: true,
+      createdBy: state.currentUser
+    });
+  }
   saveState();
   currentWorkSession = null;
   workTimerSeconds = 0;
   updateWorkTimerDisplay();
   workTimerCard.classList.add('hidden');
   workNoteCard.classList.add('hidden');
-  workTimerStatus.textContent = 'Prêt à travailler.';
+  workTimerStatus.textContent = sendToOther ? 'Note envoyée à l’autre.' : 'Note gardée pour moi.';
   renderWorkHistory();
 }
 
