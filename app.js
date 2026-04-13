@@ -1,5 +1,5 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
-const pages = ['home','reading','flashcards','library','test','quiz','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
+const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
   const local = new Date(date);
@@ -20,8 +20,8 @@ const defaultState = {
   jokers: 0,
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {} },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {} }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] }
   },
   questionBank: []
 };
@@ -69,6 +69,20 @@ const timerStop = document.getElementById('timer-stop');
 const manualMinutes = document.getElementById('manual-minutes');
 const setMinutes = document.getElementById('set-minutes');
 const readingHistory = document.getElementById('reading-history');
+
+const workStartButton = document.getElementById('work-start-timer');
+const workHistoryButton = document.getElementById('work-show-history');
+const workTimerCard = document.getElementById('work-timer-card');
+const workTimerDisplay = document.getElementById('work-timer-display');
+const workTimerStatus = document.getElementById('work-timer-status');
+const workTimerStart = document.getElementById('work-timer-start');
+const workTimerPause = document.getElementById('work-timer-pause');
+const workTimerStop = document.getElementById('work-timer-stop');
+const workNoteCard = document.getElementById('work-note-card');
+const workNoteText = document.getElementById('work-note-text');
+const workNoteSend = document.getElementById('work-note-send');
+const workNoteSave = document.getElementById('work-note-save');
+const workHistoryList = document.getElementById('work-history-list');
 
 const saveCardBtn = document.getElementById('save-card');
 const clearCardBtn = document.getElementById('clear-card');
@@ -185,6 +199,10 @@ const resetAdminOverrides = document.getElementById('reset-admin-overrides');
 let timerInterval = null;
 let timerSeconds = 0;
 let isTimerRunning = false;
+let workTimerInterval = null;
+let workTimerSeconds = 0;
+let isWorkTimerRunning = false;
+let currentWorkSession = null;
 let reviewQueue = [];
 let adminFeedbackTimeout = null;
 let adminFlashcardTarget = null;
@@ -522,13 +540,14 @@ function goToPage(page, preserveTarget = false) {
   else showSection(page);
   applyPageTheme(page);
   if (page === 'settings') renderSettings();
+  if (page === 'work') renderWorkHistory();
   if (page === 'library') {
     markOtherCardsSeen();
   }
 }
 
 function applyPageTheme(page) {
-  const themeClasses = ['theme-default', 'theme-read', 'theme-flashcards', 'theme-review', 'theme-quiz', 'theme-library'];
+  const themeClasses = ['theme-default', 'theme-read', 'theme-flashcards', 'theme-review', 'theme-quiz', 'theme-library', 'theme-work'];
   document.body.classList.remove(...themeClasses);
   const pageTheme = {
     reading: 'theme-read',
@@ -537,7 +556,8 @@ function applyPageTheme(page) {
     quiz: 'theme-quiz',
     'quiz-setup': 'theme-quiz',
     'quiz-run': 'theme-quiz',
-    library: 'theme-library'
+    library: 'theme-library',
+    work: 'theme-work'
   };
   document.body.classList.add(pageTheme[page] || 'theme-default');
 }
@@ -732,6 +752,102 @@ function renderLibrary() {
       <p>${card.explanation}</p>`;
     libraryList.appendChild(item);
   });
+}
+
+function formatDuration(seconds) {
+  const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const secs = String(seconds % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
+}
+
+function renderWorkHistory() {
+  const user = getUser(state.currentUser);
+  const history = user.workHistory || [];
+  workHistoryList.innerHTML = '';
+  if (history.length === 0) {
+    workHistoryList.innerHTML = '<div class="history-item"><span>Aucun travail encore</span></div>';
+    return;
+  }
+  history.forEach(entry => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    const target = entry.sentToOther ? "Envoyé à l'autre" : 'Garder pour moi';
+    item.innerHTML = `<span>${entry.date} • ${formatDuration(entry.duration)} • ${target}</span>
+      <strong>${entry.note || 'Aucune note'}</strong>`;
+    workHistoryList.appendChild(item);
+  });
+}
+
+function updateWorkTimerDisplay() {
+  if (!workTimerDisplay) return;
+  workTimerDisplay.textContent = formatDuration(workTimerSeconds);
+}
+
+function showWorkHistory() {
+  workTimerCard.classList.add('hidden');
+  workNoteCard.classList.add('hidden');
+  renderWorkHistory();
+}
+
+function startWorkTimer() {
+  if (isWorkTimerRunning) return;
+  currentWorkSession = { duration: workTimerSeconds, finished: false };
+  workTimerStatus.textContent = 'Compteur actif';
+  workTimerStart.classList.add('hidden');
+  workTimerPause.classList.remove('hidden');
+  isWorkTimerRunning = true;
+  workTimerInterval = setInterval(() => {
+    workTimerSeconds += 1;
+    currentWorkSession.duration = workTimerSeconds;
+    updateWorkTimerDisplay();
+  }, 1000);
+}
+
+function pauseWorkTimer() {
+  if (!isWorkTimerRunning) return;
+  clearInterval(workTimerInterval);
+  workTimerInterval = null;
+  isWorkTimerRunning = false;
+  workTimerPause.classList.add('hidden');
+  workTimerStart.classList.remove('hidden');
+  workTimerStatus.textContent = 'En pause';
+}
+
+function stopWorkTimer() {
+  if (workTimerInterval) clearInterval(workTimerInterval);
+  workTimerInterval = null;
+  isWorkTimerRunning = false;
+  currentWorkSession = currentWorkSession || { duration: workTimerSeconds, finished: false };
+  currentWorkSession.duration = workTimerSeconds;
+  currentWorkSession.finished = true;
+  workTimerStart.classList.remove('hidden');
+  workTimerPause.classList.add('hidden');
+  workTimerStatus.textContent = workTimerSeconds > 0 ? `Terminé : ${formatDuration(workTimerSeconds)}. Ajoute une note.` : 'Aucun travail enregistré.';
+  workNoteCard.classList.remove('hidden');
+  workNoteText.value = '';
+}
+
+function saveWorkNote(sendToOther) {
+  if (!currentWorkSession || !currentWorkSession.finished) return;
+  const user = getUser(state.currentUser);
+  if (!user.workHistory) user.workHistory = [];
+  const note = workNoteText.value.trim();
+  user.workHistory.unshift({
+    id: `work-${Date.now()}`,
+    date: new Date().toLocaleString('fr-FR'),
+    duration: currentWorkSession.duration,
+    note,
+    sentToOther,
+    createdBy: state.currentUser
+  });
+  saveState();
+  currentWorkSession = null;
+  workTimerSeconds = 0;
+  updateWorkTimerDisplay();
+  workTimerCard.classList.add('hidden');
+  workNoteCard.classList.add('hidden');
+  workTimerStatus.textContent = 'Prêt à travailler.';
+  renderWorkHistory();
 }
 
 function renderProfile() {
@@ -1495,6 +1611,21 @@ function attachHandlers() {
     currentLibraryGroup = null;
     renderLibrary();
   });
+  if (workStartButton) workStartButton.addEventListener('click', () => {
+    workTimerCard.classList.remove('hidden');
+    workNoteCard.classList.add('hidden');
+    workTimerSeconds = 0;
+    updateWorkTimerDisplay();
+    workTimerStatus.textContent = 'Prêt à travailler.';
+    currentWorkSession = null;
+    renderWorkHistory();
+  });
+  if (workHistoryButton) workHistoryButton.addEventListener('click', showWorkHistory);
+  if (workTimerStart) workTimerStart.addEventListener('click', startWorkTimer);
+  if (workTimerPause) workTimerPause.addEventListener('click', pauseWorkTimer);
+  if (workTimerStop) workTimerStop.addEventListener('click', stopWorkTimer);
+  if (workNoteSend) workNoteSend.addEventListener('click', () => saveWorkNote(true));
+  if (workNoteSave) workNoteSave.addEventListener('click', () => saveWorkNote(false));
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
   easyBtn.addEventListener('click', () => gradeReview('easy'));

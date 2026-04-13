@@ -46,6 +46,7 @@
           <button class="tile-button theme-review" data-nav="test"><img class="action-icon" src="images/quiz.svg" alt="Tester" />Tester flashcards</button>
           <button class="tile-button theme-quiz" data-nav="quiz"><img class="action-icon" src="images/quiz.svg" alt="Quiz" />Quiz IBO</button>
           <button class="tile-button theme-library" data-nav="library"><img class="action-icon" src="images/flashcards.svg" alt="Bibliothèque" />Toutes les cartes</button>
+          <button class="tile-button theme-work" data-nav="work"><img class="action-icon" src="images/flashcards.svg" alt="Travailler" />Travailler</button>
         </div>
 
         <div class="summary-grid">
@@ -152,6 +153,41 @@
           </div>
         </div>
         <div class="card library-list" id="library-list"></div>
+      </section>
+
+      <section class="page hidden" id="page-work">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Travailler</h2>
+        </div>
+        <div class="card small-card work-actions-card">
+          <div class="work-actions-row">
+            <button class="primary-button theme-work" id="work-start-timer">Lancer un compteur</button>
+            <button class="secondary-button" id="work-show-history">Voir l’historique</button>
+          </div>
+        </div>
+        <div class="card timer-card hidden" id="work-timer-card">
+          <div class="timer-title">Chronomètre de travail</div>
+          <strong class="timer-value" id="work-timer-display">00:00</strong>
+          <div class="timer-buttons">
+            <button class="primary-button" id="work-timer-start">Démarrer</button>
+            <button class="secondary-button hidden" id="work-timer-pause">Pause</button>
+            <button class="secondary-button" id="work-timer-stop">Terminer</button>
+          </div>
+          <p class="timer-status" id="work-timer-status">Prêt à travailler.</p>
+        </div>
+        <div class="card hidden" id="work-note-card">
+          <label>Note de travail</label>
+          <textarea id="work-note-text" rows="3" placeholder="Rédige une note pour toi ou pour l’autre..."></textarea>
+          <div class="form-actions">
+            <button class="primary-button theme-work" id="work-note-send">Envoyer à l’autre</button>
+            <button class="secondary-button" id="work-note-save">Garder pour moi</button>
+          </div>
+        </div>
+        <div class="card stats-card">
+          <h3>Historique du travail</h3>
+          <div class="history-list" id="work-history-list"></div>
+        </div>
       </section>
 
       <section class="page hidden" id="page-test">

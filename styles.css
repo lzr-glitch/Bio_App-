@@ -286,9 +286,10 @@ button, input, textarea, select {
 
 .tile-button.theme-read { background: #1f6d2a; }
 .tile-button.theme-flashcards { background: #f97316; }
-.tile-button.theme-review { background: #3b82f6; }
+..tile-button.theme-review { background: #3b82f6; }
 .tile-button.theme-quiz { background: #8b5cf6; }
 .tile-button.theme-library { background: #ef4444; }
+.tile-button.theme-work { background: #7c3aed; }
 
 .admin-panel {
   display: grid;
@@ -548,6 +549,13 @@ button, input, textarea, select {
   --shadow: 0 18px 38px rgba(139, 92, 246, 0.20);
 }
 
+.theme-work {
+  --primary: #7c3aed;
+  --accent: #d8b4fe;
+  --border: rgba(124, 58, 237, 0.18);
+  --shadow: 0 18px 38px rgba(124, 58, 237, 0.20);
+}
+
 .theme-library {
   --primary: #ef4444;
   --accent: #fda4af;
@@ -590,11 +598,19 @@ button, input, textarea, select {
   box-shadow: 0 24px 48px rgba(239, 68, 68, 0.18);
 }
 
+.theme-work .card,
+.theme-work .topbar,
+.theme-work .tabbar {
+  border-color: rgba(124, 58, 237, 0.18);
+  box-shadow: 0 24px 48px rgba(124, 58, 237, 0.18);
+}
+
 .theme-read .primary-button,
 .theme-flashcards .primary-button,
 .theme-review .primary-button,
 .theme-quiz .primary-button,
-.theme-library .primary-button {
+.theme-library .primary-button,
+.theme-work .primary-button {
   background: var(--primary);
 }
 
@@ -602,7 +618,8 @@ button, input, textarea, select {
 .theme-flashcards .primary-button:hover,
 .theme-review .primary-button:hover,
 .theme-quiz .primary-button:hover,
-.theme-library .primary-button:hover {
+.theme-library .primary-button:hover,
+.theme-work .primary-button:hover {
   opacity: 0.95;
 }
 
@@ -753,6 +770,12 @@ input[type="file"] {
 textarea {
   resize: vertical;
   min-height: 96px;
+}
+
+.work-actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .form-actions {
