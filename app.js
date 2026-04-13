@@ -828,7 +828,10 @@ function stopWorkTimer() {
 }
 
 function saveWorkNote(sendToOther) {
-  if (!currentWorkSession || !currentWorkSession.finished) return;
+  if (!currentWorkSession) {
+    currentWorkSession = { duration: workTimerSeconds, finished: true };
+  }
+  if (!currentWorkSession.finished) return;
   const user = getUser(state.currentUser);
   if (!user.workHistory) user.workHistory = [];
   const note = workNoteText.value.trim();
@@ -1639,10 +1642,12 @@ function attachHandlers() {
   });
   if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
     event.preventDefault();
+    event.stopPropagation();
     saveWorkNote(true);
   });
   if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
     event.preventDefault();
+    event.stopPropagation();
     saveWorkNote(false);
   });
   startReview.addEventListener('click', startReviewSession);

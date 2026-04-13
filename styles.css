@@ -601,8 +601,8 @@ button, input, textarea, select {
 .theme-work .card,
 .theme-work .topbar,
 .theme-work .tabbar {
-  border-color: rgba(124, 58, 237, 0.18);
-  box-shadow: 0 24px 48px rgba(124, 58, 237, 0.18);
+  border-color: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 24px 48px rgba(245, 158, 11, 0.18);
 }
 
 .theme-read .primary-button,
