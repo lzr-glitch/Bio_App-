@@ -1667,26 +1667,13 @@ function attachHandlers() {
     event.preventDefault();
     stopWorkTimer();
   });
-  //if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
-    //event.preventDefault();
-    //event.stopPropagation();
-    //saveWorkNote(true);
-  //});
-  //if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
-    //event.preventDefault();
-    //event.stopPropagation();
-    //saveWorkNote(false);
-  //});
-  document.addEventListener('click', (e) => {
-  if (e.target.id === 'work-note-save') {
-    console.log("SAVE CLICK");
-    saveWorkNote(false);
-  }
-
-  if (e.target.id === 'work-note-send') {
-    console.log("SEND CLICK");
+  if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
+    event.preventDefault();
     saveWorkNote(true);
-  }
+  });
+  if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveWorkNote(false);
   });
   startReview.addEventListener('click', startReviewSession);
   showAnswer.addEventListener('click', revealAnswer);
@@ -1762,5 +1749,3 @@ function shuffleArray(array) {
 }
 
 init();
-
-if (workNoteSend) workNoteSend.addEventListener
