@@ -241,6 +241,17 @@
           <div class="small-note">Le fichier doit contenir une liste de questions avec chapitres et réponses.</div>
           <div class="small-note">Questions dans la banque : <strong id="question-bank-count">0</strong></div>
         </div>
+        <div class="card small-card">
+          <h3>Gérer les questions</h3>
+          <label>Afficher</label>
+          <select id="quiz-question-filter">
+            <option value="mine">Mes questions</option>
+            <option value="all">Toutes les questions</option>
+          </select>
+          <label>Recherche</label>
+          <input type="text" id="quiz-question-search" placeholder="Chercher une question..." />
+          <div class="small-list" id="quiz-question-list"></div>
+        </div>
         <div class="card small-card monthly-card">
           <h3>Test mensuel IBO</h3>
           <button class="primary-button" id="start-monthly">Démarrer le test mensuel</button>

@@ -135,6 +135,9 @@ const quizSummary = document.getElementById('quiz-summary');
 const quizSummaryTitle = document.getElementById('quiz-summary-title');
 const quizResults = document.getElementById('quiz-results');
 const finishQuiz = document.getElementById('finish-quiz');
+const quizQuestionFilter = document.getElementById('quiz-question-filter');
+const quizQuestionSearch = document.getElementById('quiz-question-search');
+const quizQuestionList = document.getElementById('quiz-question-list');
 
 const startMonthly = document.getElementById('start-monthly');
 const monthlyCard = document.getElementById('monthly-card');
@@ -442,6 +445,18 @@ function getOtherUserId() {
   return state.currentUser === 'G' ? 'R' : 'G';
 }
 
+function canDeleteFlashcard(card) {
+  if (!card) return false;
+  return state.currentUser === 'R' || card.user === state.currentUser;
+}
+
+function canDeleteQuizQuestion(question) {
+  if (!question) return false;
+  if (state.currentUser === 'R') return true;
+  if (question.createdBy) return question.createdBy === state.currentUser;
+  return question.source === 'Annales';
+}
+
 function getDaily(user, day = getToday()) {
   if (!user.daily[day]) {
     user.daily[day] = { reading: 0, cards: 0, tested: 0, complete: false };
@@ -540,6 +555,7 @@ function goToPage(page, preserveTarget = false) {
   applyPageTheme(page);
   if (page === 'settings') renderSettings();
   if (page === 'work') renderWorkHistory();
+  if (page === 'quiz') renderQuizStatus();
   if (page === 'library') {
     markOtherCardsSeen();
   }
@@ -648,7 +664,10 @@ function renderFlashcards() {
   cards.forEach(card => {
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.innerHTML = `<span>${card.question}</span><strong>${card.tags.join(', ')}</strong>`;
+    const deleteButton = canDeleteFlashcard(card) ? `<button type="button" class="danger-button delete-inline-button" data-action="delete-flashcard" data-card-id="${card.id}">Supprimer</button>` : '';
+    item.innerHTML = `<span>${card.question}</span>
+      <strong>${card.tags.join(', ')}</strong>
+      ${deleteButton}`;
     todayCardsList.appendChild(item);
   });
 }
@@ -697,11 +716,13 @@ function renderLibrary() {
     groupCards.forEach(card => {
       const item = document.createElement('div');
       item.className = 'library-card';
+      const deleteButton = canDeleteFlashcard(card) ? `<button type="button" class="danger-button delete-inline-button" data-action="delete-flashcard" data-card-id="${card.id}">Supprimer</button>` : '';
       item.innerHTML = `<span>${card.user === state.currentUser ? 'Moi' : 'Autre'} • ${card.date}</span>
         <strong>${card.question}</strong>
         <p>${card.answer}</p>
         <small>${card.tags.join(', ')}</small>
-        <p>${card.explanation}</p>`;
+        <p>${card.explanation}</p>
+        ${deleteButton}`;
       libraryList.appendChild(item);
     });
     return;
@@ -754,11 +775,13 @@ function renderLibrary() {
   cards.forEach(card => {
     const item = document.createElement('div');
     item.className = 'library-card';
+    const deleteButton = canDeleteFlashcard(card) ? `<button type="button" class="danger-button delete-inline-button" data-action="delete-flashcard" data-card-id="${card.id}">Supprimer</button>` : '';
     item.innerHTML = `<span>${card.user === state.currentUser ? 'Moi' : 'Autre'} • ${card.date}</span>
       <strong>${card.question}</strong>
       <p>${card.answer}</p>
       <small>${card.tags.join(', ')}</small>
-      <p>${card.explanation}</p>`;
+      <p>${card.explanation}</p>
+      ${deleteButton}`;
     libraryList.appendChild(item);
   });
 }
@@ -1491,7 +1514,16 @@ function importAnnales() {
       if (!Array.isArray(imported)) throw new Error('Format invalide');
       imported.forEach((item, index) => {
         if (item.question && item.options && item.answer) {
-          state.questionBank.push({ id: `import-${Date.now()}-${index}`, chapter: item.chapter || 'IBO', theme: item.theme || 'Annales', question: item.question, options: item.options, answer: item.answer, source: 'Annales' });
+          state.questionBank.push({
+            id: `import-${Date.now()}-${index}`,
+            chapter: item.chapter || 'IBO',
+            theme: item.theme || 'Annales',
+            question: item.question,
+            options: item.options,
+            answer: item.answer,
+            source: 'Annales',
+            createdBy: item.createdBy || state.currentUser
+          });
         }
       });
       saveState();
@@ -1504,11 +1536,78 @@ function importAnnales() {
   reader.readAsText(file);
 }
 
-function renderQuizStatus() {
-  questionBankCount.textContent = state.questionBank.length;
-  if (quizChapter) {
-    const chapters = [...new Set(state.questionBank.map(q => q.chapter).filter(Boolean))].sort();
-    quizChapter.innerHTML = '<option value="all">Tous les chapitres</option>' + chapters.map(ch => `<option value="${ch}">${ch}</option>`).join('');
+function getVisibleQuizQuestions() {
+  const filterMode = quizQuestionFilter?.value || 'mine';
+  const searchText = quizQuestionSearch?.value.trim().toLowerCase() || '';
+  return state.questionBank.filter(question => {
+    const owner = question.createdBy || '';
+    const matchesScope = filterMode === 'all'
+      ? (state.currentUser === 'R' || owner === state.currentUser || !owner)
+      : (owner === state.currentUser || (!owner && question.source === 'Annales'));
+    if (!matchesScope) return false;
+    if (!searchText) return true;
+    return [question.question, question.chapter, question.theme, question.answer]
+      .filter(Boolean)
+      .some(text => String(text).toLowerCase().includes(searchText));
+  });
+}
+
+function renderQuizQuestionManager() {
+  if (!quizQuestionList) return;
+  const questions = getVisibleQuizQuestions();
+  quizQuestionList.innerHTML = '';
+  if (questions.length === 0) {
+    quizQuestionList.innerHTML = '<div class="history-item"><span>Aucune question à afficher.</span></div>';
+    return;
+  }
+  questions
+    .slice()
+    .reverse()
+    .forEach(question => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      const owner = question.createdBy ? ` • ${question.createdBy}` : '';
+      const deleteButton = canDeleteQuizQuestion(question)
+        ? `<button type="button" class="danger-button delete-inline-button" data-action="delete-quiz-question" data-question-id="${question.id}">Supprimer</button>`
+        : '';
+      item.innerHTML = `<span>${question.chapter || 'IBO'} • ${question.theme || 'Annales'}${owner}</span>
+        <strong>${question.question}</strong>
+        ${deleteButton}`;
+      quizQuestionList.appendChild(item);
+    });
+}
+
+function deleteQuizQuestionById(questionId) {
+  const index = state.questionBank.findIndex(question => question.id === questionId);
+  if (index === -1) return;
+  const question = state.questionBank[index];
+  if (!canDeleteQuizQuestion(question)) {
+    alert('Tu ne peux pas supprimer cette question.');
+    return;
+  }
+  state.questionBank.splice(index, 1);
+  saveState();
+  renderQuizStatus();
+}
+
+function deleteFlashcardById(cardId) {
+  const users = [getUser('G'), getUser('R')];
+  for (const user of users) {
+    const index = user.flashcards.findIndex(card => card.id === cardId);
+    if (index === -1) continue;
+    const card = user.flashcards[index];
+    if (!canDeleteFlashcard(card)) {
+      alert('Tu ne peux pas supprimer cette flashcard.');
+      return;
+    }
+    const confirmed = confirm(`Supprimer la carte "${card.question}" ?`);
+    if (!confirmed) return;
+    user.flashcards.splice(index, 1);
+    const daily = getDaily(user);
+    daily.cards = user.flashcards.filter(entry => entry.date === getToday()).length;
+    saveState();
+    renderApp();
+    return;
   }
 }
 
@@ -1641,6 +1740,39 @@ function attachHandlers() {
     currentLibraryGroup = null;
     renderLibrary();
   });
+  if (todayCardsList) todayCardsList.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action="delete-flashcard"]');
+    if (!button) return;
+    event.preventDefault();
+    deleteFlashcardById(button.dataset.cardId);
+  });
+  if (libraryList) libraryList.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action="delete-flashcard"]');
+    if (!button) return;
+    event.preventDefault();
+    deleteFlashcardById(button.dataset.cardId);
+  });
+  if (quizQuestionFilter) {
+    quizQuestionFilter.addEventListener('change', () => {
+      renderQuizQuestionManager();
+    });
+  }
+  if (quizQuestionSearch) {
+    quizQuestionSearch.addEventListener('input', () => {
+      renderQuizQuestionManager();
+    });
+  }
+  if (quizQuestionList) quizQuestionList.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action="delete-quiz-question"]');
+    if (!button) return;
+    event.preventDefault();
+    const questionId = button.dataset.questionId;
+    const question = state.questionBank.find(item => item.id === questionId);
+    if (!question) return;
+    const confirmed = confirm(`Supprimer la question "${question.question}" ?`);
+    if (!confirmed) return;
+    deleteQuizQuestionById(questionId);
+  });
   if (workStartButton) workStartButton.addEventListener('click', (event) => {
     event.preventDefault();
     workTimerCard.classList.remove('hidden');
@@ -1742,6 +1874,13 @@ function renderQuizStatus() {
     const chapters = [...new Set(state.questionBank.map(q => q.chapter).filter(Boolean))].sort();
     quizChapter.innerHTML = '<option value="all">Tous les chapitres</option>' + chapters.map(ch => `<option value="${ch}">${ch}</option>`).join('');
   }
+  if (quizQuestionFilter) {
+    const canSeeAll = state.currentUser === 'R';
+    const allOption = quizQuestionFilter.querySelector('option[value="all"]');
+    if (allOption) allOption.disabled = !canSeeAll;
+    if (!canSeeAll && quizQuestionFilter.value === 'all') quizQuestionFilter.value = 'mine';
+  }
+  renderQuizQuestionManager();
 }
 
 function shuffleArray(array) {

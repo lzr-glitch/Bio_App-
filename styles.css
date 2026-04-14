@@ -785,6 +785,13 @@ textarea {
   margin-top: 16px;
 }
 
+.delete-inline-button {
+  margin-top: 12px;
+  width: auto;
+  padding: 8px 12px;
+  box-shadow: none;
+}
+
 .history-list,
 .small-list,
 .options-list,
