@@ -561,6 +561,8 @@ function goToPage(page, preserveTarget = false) {
   else if (page === 'settings') showSection('settings');
   else showSection(page);
   applyPageTheme(page);
+  if (page === 'stats') renderStats();
+  if (page === 'badges') renderBadges();
   if (page === 'settings') renderSettings();
   if (page === 'work') renderWorkHistory();
   if (page === 'quiz') renderQuizStatus();
@@ -1244,7 +1246,7 @@ function getLastDays(count) {
   return Array.from({ length: count }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - index);
-    return date.toISOString().slice(0, 10);
+    return toLocalDateKey(date);
   });
 }
 
@@ -1252,14 +1254,18 @@ function updateTimerDisplay() {
   const minutes = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
   const seconds = String(timerSeconds % 60).padStart(2, '0');
   timerDisplay.textContent = `${minutes}:${seconds}`;
+  if (timerStart && !isTimerRunning) {
+    timerStart.textContent = timerSeconds > 0 ? 'Reprendre' : 'Démarrer';
+  }
 }
 
 function startTimer() {
   if (isTimerRunning) return;
   isTimerRunning = true;
+  timerStart.textContent = 'Démarrer';
   timerStart.classList.add('hidden');
   timerPause.classList.remove('hidden');
-  timerStatus.textContent = 'Lecture en cours...';
+  timerStatus.textContent = timerSeconds > 0 ? 'Lecture reprise...' : 'Lecture en cours...';
   timerInterval = setInterval(() => {
     timerSeconds += 1;
     updateTimerDisplay();
@@ -1270,24 +1276,34 @@ function pauseTimer() {
   isTimerRunning = false;
   timerStart.classList.remove('hidden');
   timerPause.classList.add('hidden');
+  timerStart.textContent = timerSeconds > 0 ? 'Reprendre' : 'Démarrer';
   timerStatus.textContent = 'Lecture en pause. Termine pour enregistrer.';
   clearInterval(timerInterval);
 }
 
 function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
   const minutes = Math.ceil(timerSeconds / 60);
-  if (minutes > 0) {
-    addReading(minutes);
-    timerStatus.textContent = `Ajouté ${minutes} min de lecture.`;
-  } else {
-    timerStatus.textContent = 'Aucun temps à ajouter.';
-  }
   timerSeconds = 0;
   isTimerRunning = false;
   timerStart.classList.remove('hidden');
   timerPause.classList.add('hidden');
+  timerStart.textContent = 'Démarrer';
   updateTimerDisplay();
+
+  if (minutes > 0) {
+    const user = getUser(state.currentUser);
+    const daily = getDaily(user);
+    daily.reading += minutes;
+    user.reading[getToday()] = daily.reading;
+    tryCompleteDay(user);
+    saveState();
+    renderApp();
+    timerStatus.textContent = `Ajouté ${minutes} min de lecture.`;
+  } else {
+    timerStatus.textContent = 'Aucun temps à ajouter.';
+  }
 }
 
 function addReading(minutes) {
@@ -1575,6 +1591,9 @@ function validateQuizAnswer() {
   const correct = quizState.selected === question.answer;
   const user = getUser(state.currentUser);
   user.quizzes.push({ date: getToday(), questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
+  const daily = getDaily(user);
+  daily.tested = user.tests.filter(test => test.date === getToday()).length + user.quizzes.filter(quiz => quiz.date === getToday()).length;
+  tryCompleteDay(user);
   if (correct) quizState.correct += 1;
   saveState();
   quizState.index += 1;
@@ -1600,6 +1619,7 @@ function finishQuizSession() {
   quizSummary.classList.add('hidden');
   quizCard.classList.add('hidden');
   quizState = null;
+  renderApp();
   goToPage('quiz');
 }
 
