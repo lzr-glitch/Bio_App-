@@ -849,7 +849,7 @@ function saveWorkNote(sendToOther) {
     date: new Date().toISOString(),
     duration: currentWorkSession.duration,
     note,
-    sentToOther,
+    sentToOther: sendToOther,
     createdBy: state.currentUser,
     shared: sendToOther
   };
