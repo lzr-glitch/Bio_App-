@@ -42,10 +42,10 @@
 
         <div class="quick-actions">
           <button class="tile-button theme-read" data-nav="reading"><img class="action-icon" src="images/reading.svg" alt="Lire" />Lire</button>
-          <button class="tile-button theme-flashcards" data-nav="flashcards"><img class="action-icon" src="images/flashcards.svg" alt="Flashcards" />Créer flashcards</button>
+          <button class="tile-button theme-flashcards" data-nav="flashcards"><img class="action-icon" src="images/flashcards.svg" alt="Flashcards" />Flashcards</button>
           <button class="tile-button theme-review" data-nav="test"><img class="action-icon" src="images/quiz.svg" alt="Tester" />Tester flashcards</button>
-          <button class="tile-button theme-quiz" data-nav="quiz"><img class="action-icon" src="images/quiz.svg" alt="Quiz" />Quiz IBO</button>
-          <button class="tile-button theme-library" data-nav="library"><img class="action-icon" src="images/flashcards.svg" alt="Bibliothèque" />Toutes les cartes</button>
+          <button class="tile-button theme-quiz" data-nav="quiz"><img class="action-icon" src="images/quiz.svg" alt="Quiz" />Quiz</button>
+          <button class="tile-button theme-quiz" data-nav="quiz-create"><img class="action-icon" src="images/quiz.svg" alt="Créer questions quiz" />Créer questions quiz</button>
           <button class="tile-button theme-work" data-nav="work"><img class="action-icon" src="images/flashcards.svg" alt="Travailler" />Travailler</button>
         </div>
 
@@ -73,7 +73,7 @@
           <div>
             <div class="highlight-label">Cartes non vues de l’autre</div>
             <strong id="other-unseen-count">0</strong>
-            <button class="secondary-button small" data-nav="library">Voir</button>
+            <button class="secondary-button small" data-nav="flashcards">Voir</button>
           </div>
         </div>
 
@@ -111,7 +111,7 @@
       <section class="page hidden" id="page-flashcards">
         <div class="page-header">
           <button class="back-button" data-nav="home">← Retour</button>
-          <h2>Créer des flashcards</h2>
+          <h2>Flashcards</h2>
         </div>
         <div class="flashcard-target-hint hidden" id="flashcard-target-hint">La carte sera créée pour l’autre personne.</div>
         <div class="card flashcard-form">
@@ -134,14 +134,8 @@
           <h3>Cartes du jour</h3>
           <div id="today-cards-list" class="small-list"></div>
         </div>
-      </section>
-
-      <section class="page hidden" id="page-library">
-        <div class="page-header">
-          <button class="back-button" data-nav="home">← Retour</button>
-          <h2>Toutes les flashcards</h2>
-        </div>
         <div class="card filter-card">
+          <h3>Toutes les flashcards</h3>
           <input id="library-search" placeholder="Filtrer par tag, chapitre, question..." />
           <div class="sort-row">
             <label>Tri</label>
@@ -153,6 +147,17 @@
           </div>
         </div>
         <div class="card library-list" id="library-list"></div>
+      </section>
+
+      <section class="page hidden" id="page-library">
+        <div class="page-header">
+          <button class="back-button" data-nav="flashcards">← Retour</button>
+          <h2>Flashcards</h2>
+        </div>
+        <div class="card small-card">
+          <div class="small-note">La vue bibliothèque est maintenant regroupée dans l’écran Flashcards.</div>
+          <button class="primary-button" data-nav="flashcards">Ouvrir Flashcards</button>
+        </div>
       </section>
 
       <section class="page hidden" id="page-work">
@@ -225,14 +230,55 @@
       <section class="page hidden" id="page-quiz">
         <div class="page-header">
           <button class="back-button" data-nav="home">← Retour</button>
-          <h2>Quiz IBO</h2>
+          <h2>Quiz</h2>
         </div>
         <div class="card small-card quiz-actions-card">
           <div class="quiz-actions-row">
             <button class="primary-button theme-blue" id="start-quiz" data-nav="quiz-setup">Mini quiz</button>
             <button class="secondary-button theme-blue" id="show-ib-annales">Annales IBO</button>
             <button class="primary-button theme-orange" id="start-monthly-quick">Test mensuel</button>
+            <button class="secondary-button theme-blue" data-nav="quiz-create">Créer des questions</button>
           </div>
+        </div>
+        <div class="card small-card monthly-card">
+          <h3>Test mensuel IBO</h3>
+          <button class="primary-button" id="start-monthly">Démarrer le test mensuel</button>
+          <div class="small-note">Un vrai test à la fin de chaque mois pour marquer ton score.</div>
+        </div>
+        <div class="card quiz-card hidden" id="monthly-card">
+          <div class="question-meta" id="monthly-meta"></div>
+          <div class="question-box" id="monthly-question"></div>
+          <div class="options-list" id="monthly-options"></div>
+          <button class="primary-button" id="validate-monthly">Valider</button>
+        </div>
+        <div class="card small-card hidden" id="monthly-summary">
+          <h3>Test mensuel terminé</h3>
+          <p id="monthly-results"></p>
+          <button class="primary-button" id="finish-monthly">Terminer</button>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-quiz-create">
+        <div class="page-header">
+          <button class="back-button" data-nav="home">← Retour</button>
+          <h2>Créer des questions de quiz</h2>
+        </div>
+        <div class="card small-card">
+          <label>Chapitre</label>
+          <input type="text" id="quiz-create-chapter" placeholder="Ex: Génétique" />
+          <label>Thème</label>
+          <input type="text" id="quiz-create-theme" placeholder="Ex: ADN, transcription" />
+          <label>Question</label>
+          <textarea id="quiz-create-question" rows="3" placeholder="Écris la question ici"></textarea>
+          <label>Options (une par ligne)</label>
+          <textarea id="quiz-create-options" rows="4" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D"></textarea>
+          <label>Bonne réponse (doit correspondre à une option)</label>
+          <input type="text" id="quiz-create-answer" placeholder="Option exacte" />
+          <div class="form-actions">
+            <button class="primary-button theme-quiz" id="quiz-create-save">Enregistrer la question</button>
+            <button class="secondary-button" id="quiz-create-clear">Effacer</button>
+          </div>
+          <div class="small-note" id="quiz-create-status"></div>
         </div>
         <div class="card small-card import-card">
           <label>Importer annales depuis un fichier JSON</label>
@@ -251,22 +297,6 @@
           <label>Recherche</label>
           <input type="text" id="quiz-question-search" placeholder="Chercher une question..." />
           <div class="small-list" id="quiz-question-list"></div>
-        </div>
-        <div class="card small-card monthly-card">
-          <h3>Test mensuel IBO</h3>
-          <button class="primary-button" id="start-monthly">Démarrer le test mensuel</button>
-          <div class="small-note">Un vrai test à la fin de chaque mois pour marquer ton score.</div>
-        </div>
-        <div class="card quiz-card hidden" id="monthly-card">
-          <div class="question-meta" id="monthly-meta"></div>
-          <div class="question-box" id="monthly-question"></div>
-          <div class="options-list" id="monthly-options"></div>
-          <button class="primary-button" id="validate-monthly">Valider</button>
-        </div>
-        <div class="card small-card hidden" id="monthly-summary">
-          <h3>Test mensuel terminé</h3>
-          <p id="monthly-results"></p>
-          <button class="primary-button" id="finish-monthly">Terminer</button>
         </div>
       </section>
 

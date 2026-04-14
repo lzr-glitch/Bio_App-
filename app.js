@@ -1,5 +1,5 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
-const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
+const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
   const local = new Date(date);
@@ -135,6 +135,14 @@ const quizSummary = document.getElementById('quiz-summary');
 const quizSummaryTitle = document.getElementById('quiz-summary-title');
 const quizResults = document.getElementById('quiz-results');
 const finishQuiz = document.getElementById('finish-quiz');
+const quizCreateChapter = document.getElementById('quiz-create-chapter');
+const quizCreateTheme = document.getElementById('quiz-create-theme');
+const quizCreateQuestion = document.getElementById('quiz-create-question');
+const quizCreateOptions = document.getElementById('quiz-create-options');
+const quizCreateAnswer = document.getElementById('quiz-create-answer');
+const quizCreateSave = document.getElementById('quiz-create-save');
+const quizCreateClear = document.getElementById('quiz-create-clear');
+const quizCreateStatus = document.getElementById('quiz-create-status');
 const quizQuestionFilter = document.getElementById('quiz-question-filter');
 const quizQuestionSearch = document.getElementById('quiz-question-search');
 const quizQuestionList = document.getElementById('quiz-question-list');
@@ -556,7 +564,8 @@ function goToPage(page, preserveTarget = false) {
   if (page === 'settings') renderSettings();
   if (page === 'work') renderWorkHistory();
   if (page === 'quiz') renderQuizStatus();
-  if (page === 'library') {
+  if (page === 'quiz-create') renderQuizStatus();
+  if (page === 'library' || page === 'flashcards') {
     markOtherCardsSeen();
   }
 }
@@ -569,6 +578,7 @@ function applyPageTheme(page) {
     flashcards: 'theme-flashcards',
     test: 'theme-review',
     quiz: 'theme-quiz',
+    'quiz-create': 'theme-quiz',
     'quiz-setup': 'theme-quiz',
     'quiz-run': 'theme-quiz',
     library: 'theme-library',
@@ -1307,6 +1317,52 @@ function resetFlashcardForm() {
   cardNote.value = '';
 }
 
+function resetQuizCreateForm() {
+  if (quizCreateChapter) quizCreateChapter.value = '';
+  if (quizCreateTheme) quizCreateTheme.value = '';
+  if (quizCreateQuestion) quizCreateQuestion.value = '';
+  if (quizCreateOptions) quizCreateOptions.value = '';
+  if (quizCreateAnswer) quizCreateAnswer.value = '';
+}
+
+function createQuizQuestion() {
+  if (!quizCreateQuestion || !quizCreateOptions || !quizCreateAnswer) return;
+  const chapter = (quizCreateChapter?.value || '').trim() || 'IBO';
+  const theme = (quizCreateTheme?.value || '').trim() || 'Création manuelle';
+  const question = quizCreateQuestion.value.trim();
+  const options = quizCreateOptions.value
+    .split('\n')
+    .map(option => option.trim())
+    .filter(Boolean);
+  const answer = quizCreateAnswer.value.trim();
+
+  if (!question || options.length < 2 || !answer) {
+    alert('Ajoute une question, au moins 2 options et une bonne réponse.');
+    return;
+  }
+  if (!options.includes(answer)) {
+    alert('La bonne réponse doit correspondre exactement à une option.');
+    return;
+  }
+
+  state.questionBank.push({
+    id: `manual-${Date.now()}`,
+    chapter,
+    theme,
+    question,
+    options,
+    answer,
+    source: 'Manuel',
+    createdBy: state.currentUser
+  });
+  saveState();
+  renderQuizStatus();
+  resetQuizCreateForm();
+  if (quizCreateStatus) {
+    quizCreateStatus.textContent = 'Question enregistrée.';
+  }
+}
+
 function startReviewSession() {
   const count = parseInt(reviewCount.value, 10);
   const user = getUser(state.currentUser);
@@ -1762,6 +1818,25 @@ function attachHandlers() {
       renderQuizQuestionManager();
     });
   }
+  if (quizCreateSave) {
+    quizCreateSave.addEventListener('click', (event) => {
+      event.preventDefault();
+      createQuizQuestion();
+    });
+  }
+  if (quizCreateClear) {
+    quizCreateClear.addEventListener('click', (event) => {
+      event.preventDefault();
+      resetQuizCreateForm();
+      if (quizCreateStatus) quizCreateStatus.textContent = '';
+    });
+  }
+  [quizCreateChapter, quizCreateTheme, quizCreateQuestion, quizCreateOptions, quizCreateAnswer].forEach(input => {
+    if (!input) return;
+    input.addEventListener('input', () => {
+      if (quizCreateStatus) quizCreateStatus.textContent = '';
+    });
+  });
   if (quizQuestionList) quizQuestionList.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action="delete-quiz-question"]');
     if (!button) return;
