@@ -45,7 +45,7 @@
           <button class="tile-button theme-flashcards" data-nav="flashcards"><img class="action-icon" src="images/flashcards.svg" alt="Flashcards" />Flashcards</button>
           <button class="tile-button theme-review" data-nav="test"><img class="action-icon" src="images/quiz.svg" alt="Tester" />Tester flashcards</button>
           <button class="tile-button theme-quiz" data-nav="quiz"><img class="action-icon" src="images/quiz.svg" alt="Quiz" />Quiz</button>
-          <button class="tile-button theme-quiz" data-nav="quiz-create"><img class="action-icon" src="images/quiz.svg" alt="Créer questions quiz" />Créer questions quiz</button>
+          <button class="tile-button theme-library" data-nav="quiz-create"><img class="action-icon" src="images/quiz.svg" alt="Créer questions quiz" />Créer questions quiz</button>
           <button class="tile-button theme-work" data-nav="work"><img class="action-icon" src="images/flashcards.svg" alt="Travailler" />Travailler</button>
         </div>
 
@@ -237,7 +237,7 @@
             <button class="primary-button theme-blue" id="start-quiz" data-nav="quiz-setup">Mini quiz</button>
             <button class="secondary-button theme-blue" id="show-ib-annales">Annales IBO</button>
             <button class="primary-button theme-orange" id="start-monthly-quick">Test mensuel</button>
-            <button class="secondary-button theme-blue" data-nav="quiz-create">Créer des questions</button>
+            <button class="danger-button" data-nav="quiz-create">Créer des questions</button>
           </div>
         </div>
         <div class="card small-card monthly-card">
@@ -275,7 +275,7 @@
           <label>Bonne réponse (doit correspondre à une option)</label>
           <input type="text" id="quiz-create-answer" placeholder="Option exacte" />
           <div class="form-actions">
-            <button class="primary-button theme-quiz" id="quiz-create-save">Enregistrer la question</button>
+            <button class="danger-button" id="quiz-create-save">Enregistrer la question</button>
             <button class="secondary-button" id="quiz-create-clear">Effacer</button>
           </div>
           <div class="small-note" id="quiz-create-status"></div>
