@@ -652,13 +652,56 @@ function renderReading() {
   days.forEach(day => {
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.innerHTML = `<span>${day}</span><strong>${user.reading[day]} min</strong>`;
+    item.innerHTML = `<span>${day}</span>
+      <strong>${user.reading[day]} min</strong>
+      <div class="history-actions">
+        <button type="button" class="secondary-button" data-action="edit-reading" data-day="${day}">Modifier</button>
+        <button type="button" class="danger-button" data-action="delete-reading" data-day="${day}">Supprimer</button>
+      </div>`;
     readingHistory.appendChild(item);
   });
   if (days.length === 0) {
     readingHistory.innerHTML = '<div class="history-item"><span>Aucun historique encore</span></div>';
   }
   updateTimerDisplay();
+}
+
+function refreshDailyCompletionForDay(user, dayKey) {
+  const daily = getDaily(user, dayKey);
+  const thresholds = state.dailyThresholds || { reading: 5, cards: 3, tested: 1 };
+  daily.complete = daily.reading >= thresholds.reading && daily.cards >= thresholds.cards && daily.tested >= thresholds.tested;
+}
+
+function editReadingEntry(dayKey) {
+  const user = getUser(state.currentUser);
+  const current = user.reading[dayKey];
+  if (current == null) return;
+  const raw = prompt(`Modifier les minutes pour ${dayKey}`, String(current));
+  if (raw === null) return;
+  const next = Number(raw);
+  if (!Number.isFinite(next) || next < 0) {
+    alert('Entre un nombre valide (0 ou plus).');
+    return;
+  }
+  user.reading[dayKey] = Math.round(next);
+  const daily = getDaily(user, dayKey);
+  daily.reading = user.reading[dayKey];
+  refreshDailyCompletionForDay(user, dayKey);
+  saveState();
+  renderApp();
+}
+
+function deleteReadingEntry(dayKey) {
+  const user = getUser(state.currentUser);
+  if (user.reading[dayKey] == null) return;
+  const confirmed = confirm(`Supprimer l'entrée de lecture du ${dayKey} ?`);
+  if (!confirmed) return;
+  delete user.reading[dayKey];
+  const daily = getDaily(user, dayKey);
+  daily.reading = 0;
+  refreshDailyCompletionForDay(user, dayKey);
+  saveState();
+  renderApp();
 }
 
 function renderFlashcards() {
@@ -1786,6 +1829,19 @@ function attachHandlers() {
   timerPause.addEventListener('click', pauseTimer);
   timerStop.addEventListener('click', stopTimer);
   setMinutes.addEventListener('click', addManualReading);
+  if (readingHistory) readingHistory.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const dayKey = button.dataset.day;
+    if (!dayKey) return;
+    event.preventDefault();
+    if (button.dataset.action === 'edit-reading') {
+      editReadingEntry(dayKey);
+    }
+    if (button.dataset.action === 'delete-reading') {
+      deleteReadingEntry(dayKey);
+    }
+  });
   saveCardBtn.addEventListener('click', addFlashcard);
   clearCardBtn.addEventListener('click', resetFlashcardForm);
   librarySearch.addEventListener('input', () => {

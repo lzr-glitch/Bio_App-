@@ -834,6 +834,20 @@ textarea {
   font-size: 1.1rem;
 }
 
+.history-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.history-actions .secondary-button,
+.history-actions .danger-button {
+  width: auto;
+  padding: 8px 12px;
+  box-shadow: none;
+}
+
 .review-buttons,
 .sort-row,
 .question-meta {
