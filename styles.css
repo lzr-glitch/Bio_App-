@@ -946,6 +946,48 @@ textarea {
   background: var(--primary);
 }
 
+.stats-card {
+  display: grid;
+  gap: 14px;
+}
+
+.stats-compare-card {
+  background: var(--surface-soft);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.stats-compare-card h3 {
+  margin: 0 0 4px;
+}
+
+.stats-compare-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.stats-compare-grid span {
+  color: var(--muted);
+}
+
+.stats-compare-grid strong {
+  text-align: right;
+}
+
+.stats-compare-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-compare-head span,
+.stats-compare-head strong {
+  color: var(--text);
+}
+
 .badge-grid {
   display: grid;
   gap: 12px;
@@ -966,5 +1008,10 @@ textarea {
   .chart-labels,
   .tabbar {
     grid-template-columns: 1fr;
+  }
+
+  .stats-compare-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
   }
 }

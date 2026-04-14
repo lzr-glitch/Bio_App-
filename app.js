@@ -19,8 +19,8 @@ const defaultState = {
   jokers: 0,
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] }
   },
   questionBank: []
 };
@@ -685,7 +685,10 @@ function editReadingEntry(dayKey) {
     alert('Entre un nombre valide (0 ou plus).');
     return;
   }
-  user.reading[dayKey] = Math.round(next);
+  const roundedMinutes = Math.round(next);
+  user.reading[dayKey] = roundedMinutes;
+  if (!user.readingSeconds) user.readingSeconds = {};
+  user.readingSeconds[dayKey] = roundedMinutes * 60;
   const daily = getDaily(user, dayKey);
   daily.reading = user.reading[dayKey];
   refreshDailyCompletionForDay(user, dayKey);
@@ -699,6 +702,7 @@ function deleteReadingEntry(dayKey) {
   const confirmed = confirm(`Supprimer l'entrée de lecture du ${dayKey} ?`);
   if (!confirmed) return;
   delete user.reading[dayKey];
+  if (user.readingSeconds) delete user.readingSeconds[dayKey];
   const daily = getDaily(user, dayKey);
   daily.reading = 0;
   refreshDailyCompletionForDay(user, dayKey);
@@ -1118,39 +1122,150 @@ function computeStats(user) {
 let statsTarget = null;
 let badgesTarget = null;
 
-function renderStats() {
-  const targetUser = statsTarget ? getUser(statsTarget) : getUser(state.currentUser);
-  document.querySelector('#page-stats h2').textContent = `Statistiques de ${targetUser.name}`;
-  setStatsTargetHint(targetUser);
-  statsCharts.innerHTML = '';
-  const days = getLastDays(7).reverse();
-  const me = targetUser;
-  days.forEach(day => {
-    const readingCount = me.reading[day] || 0;
-    const cardCount = me.flashcards.filter(card => card.date === day).length;
-    const tests = me.tests.filter(test => test.date === day).length + me.quizzes.filter(quiz => quiz.date === day).length;
-    const workTime = sumWorkLast7(me);
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML = `<strong>${day}</strong><div style="display:grid;gap:8px;flex:1">
-      ${createBar('Lecture', readingCount, 60)}
-      ${createBar('Flashcards', cardCount, 8)}
-      ${createBar('Tests', tests, 4)}
-      ${createBar('Travail', workTime, 120)}
+function getMondayKey(dayKey = getToday()) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const offsetToMonday = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - offsetToMonday);
+  return toLocalDateKey(date);
+}
+
+function getReadingSecondsForDay(user, dayKey) {
+  if (user.readingSeconds && Number.isFinite(user.readingSeconds[dayKey])) {
+    return Math.max(0, Number(user.readingSeconds[dayKey]));
+  }
+  return Math.max(0, Number(user.reading[dayKey] || 0) * 60);
+}
+
+function formatReadingSeconds(totalSeconds) {
+  const safe = Math.max(0, Math.round(totalSeconds || 0));
+  const hours = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function getQuestionCreatedDay(question) {
+  if (question.createdAt) {
+    const date = new Date(question.createdAt);
+    if (!Number.isNaN(date.getTime())) return toLocalDateKey(date);
+  }
+  if (question.id) {
+    const manualMatch = String(question.id).match(/^manual-(\d+)$/);
+    if (manualMatch) return toLocalDateKey(new Date(Number(manualMatch[1])));
+    const importMatch = String(question.id).match(/^import-(\d+)-\d+$/);
+    if (importMatch) return toLocalDateKey(new Date(Number(importMatch[1])));
+  }
+  return null;
+}
+
+function getPeriodStats(user, period) {
+  const inRange = (dayKey) => {
+    if (!dayKey) return false;
+    if (!period.start || !period.end) return true;
+    return dayKey >= period.start && dayKey <= period.end;
+  };
+
+  const readingKeys = new Set([
+    ...Object.keys(user.reading || {}),
+    ...Object.keys(user.readingSeconds || {})
+  ]);
+  let readingSeconds = 0;
+  readingKeys.forEach(dayKey => {
+    if (inRange(dayKey)) readingSeconds += getReadingSecondsForDay(user, dayKey);
+  });
+
+  const flashcardsCreated = user.flashcards.filter(card => inRange(card.date)).length;
+  const flashcardsTested = user.tests
+    .filter(test => inRange(test.date))
+    .reduce((sum, test) => sum + (Number(test.count) || 0), 0);
+
+  const quizQuestionsCreated = state.questionBank.filter(question => {
+    if (question.createdBy !== user.name) return false;
+    const createdDay = getQuestionCreatedDay(question);
+    if (!period.start || !period.end) return true;
+    return createdDay ? inRange(createdDay) : false;
+  }).length;
+
+  const quizQuestionsTested = user.quizzes.filter(quiz => inRange(quiz.date)).length;
+
+  return {
+    readingSeconds,
+    flashcardsCreated,
+    flashcardsTested,
+    quizQuestionsCreated,
+    quizQuestionsTested
+  };
+}
+
+function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, rightStats) {
+  const card = document.createElement('div');
+  card.className = 'stats-compare-card';
+  card.innerHTML = `<h3>${title}</h3>
+    <div class="stats-compare-grid stats-compare-head">
+      <span>Indicateur</span>
+      <strong>${leftLabel}</strong>
+      <strong>${rightLabel}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Temps de lecture</span>
+      <strong>${formatReadingSeconds(leftStats.readingSeconds)}</strong>
+      <strong>${formatReadingSeconds(rightStats.readingSeconds)}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Flashcards créées</span>
+      <strong>${leftStats.flashcardsCreated}</strong>
+      <strong>${rightStats.flashcardsCreated}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Flashcards testées</span>
+      <strong>${leftStats.flashcardsTested}</strong>
+      <strong>${rightStats.flashcardsTested}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Questions quiz créées</span>
+      <strong>${leftStats.quizQuestionsCreated}</strong>
+      <strong>${rightStats.quizQuestionsCreated}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Questions quiz testées</span>
+      <strong>${leftStats.quizQuestionsTested}</strong>
+      <strong>${rightStats.quizQuestionsTested}</strong>
     </div>`;
-    statsCharts.appendChild(row);
+  return card;
+}
+
+function renderStats() {
+  const leftUserId = statsTarget || state.currentUser;
+  const rightUserId = leftUserId === 'G' ? 'R' : 'G';
+  const leftUser = getUser(leftUserId);
+  const rightUser = getUser(rightUserId);
+  document.querySelector('#page-stats h2').textContent = `Statistiques ${leftUser.name} vs ${rightUser.name}`;
+  setStatsTargetHint(leftUser, rightUser);
+  statsCharts.innerHTML = '';
+
+  const today = getToday();
+  const monday = getMondayKey(today);
+
+  const periods = [
+    { title: `Aujourd'hui (${today})`, start: today, end: today },
+    { title: `Depuis lundi (${monday} → ${today})`, start: monday, end: today },
+    { title: 'All time', start: null, end: null }
+  ];
+
+  periods.forEach(period => {
+    const leftStats = getPeriodStats(leftUser, period);
+    const rightStats = getPeriodStats(rightUser, period);
+    statsCharts.appendChild(
+      createStatsComparisonCard(period.title, leftUser.name, rightUser.name, leftStats, rightStats)
+    );
   });
 }
 
-function createBar(label, value, max) {
-  const width = Math.min(100, Math.round((value / max) * 100));
-  return `<div class="bar-row"><span>${label} ${value}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div></div>`;
-}
-
-function setStatsTargetHint(targetUser) {
+function setStatsTargetHint(leftUser, rightUser) {
   if (!statsTargetHint) return;
-  statsTargetHint.textContent = `Tu regardes les statistiques de ${targetUser.name}.`;
-  statsTargetHint.classList.toggle('hidden', !statsTarget);
+  statsTargetHint.textContent = `Comparaison en cours : ${leftUser.name} et ${rightUser.name}.`;
+  statsTargetHint.classList.remove('hidden');
 }
 
 function renderChapters() {
@@ -1284,7 +1399,7 @@ function pauseTimer() {
 function stopTimer() {
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = null;
-  const minutes = Math.ceil(timerSeconds / 60);
+  const elapsedSeconds = timerSeconds;
   timerSeconds = 0;
   isTimerRunning = false;
   timerStart.classList.remove('hidden');
@@ -1292,24 +1407,26 @@ function stopTimer() {
   timerStart.textContent = 'Démarrer';
   updateTimerDisplay();
 
-  if (minutes > 0) {
-    const user = getUser(state.currentUser);
-    const daily = getDaily(user);
-    daily.reading += minutes;
-    user.reading[getToday()] = daily.reading;
-    tryCompleteDay(user);
-    saveState();
-    renderApp();
-    timerStatus.textContent = `Ajouté ${minutes} min de lecture.`;
+  if (elapsedSeconds > 0) {
+    addReadingSeconds(elapsedSeconds);
+    timerStatus.textContent = `Ajouté ${formatReadingSeconds(elapsedSeconds)} de lecture.`;
   } else {
     timerStatus.textContent = 'Aucun temps à ajouter.';
   }
 }
 
 function addReading(minutes) {
+  addReadingSeconds((Number(minutes) || 0) * 60);
+}
+
+function addReadingSeconds(seconds) {
+  const roundedSeconds = Math.max(0, Math.round(seconds));
+  if (!roundedSeconds) return;
   const user = getUser(state.currentUser);
   const daily = getDaily(user);
-  daily.reading += minutes;
+  if (!user.readingSeconds) user.readingSeconds = {};
+  user.readingSeconds[getToday()] = (Number(user.readingSeconds[getToday()]) || 0) + roundedSeconds;
+  daily.reading = Math.ceil(user.readingSeconds[getToday()] / 60);
   user.reading[getToday()] = daily.reading;
   tryCompleteDay(user);
   saveState();
@@ -1412,7 +1529,8 @@ function createQuizQuestion() {
     options,
     answer,
     source: 'Manuel',
-    createdBy: state.currentUser
+    createdBy: state.currentUser,
+    createdAt: new Date().toISOString()
   });
   saveState();
   renderQuizStatus();
@@ -1641,7 +1759,8 @@ function importAnnales() {
             options: item.options,
             answer: item.answer,
             source: 'Annales',
-            createdBy: item.createdBy || state.currentUser
+            createdBy: item.createdBy || state.currentUser,
+            createdAt: item.createdAt || new Date().toISOString()
           });
         }
       });
