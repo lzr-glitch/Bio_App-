@@ -192,6 +192,13 @@ button, input, textarea, select {
   color: var(--muted);
 }
 
+.sync-toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+}
+
 .hidden {
   display: none !important;
 }

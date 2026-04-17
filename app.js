@@ -13,6 +13,8 @@ const defaultState = {
   streak: 0,
   pending: false,
   theme: 'dark',
+  sync: { enabled: false, endpoint: '', token: '' },
+  syncMeta: { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 },
   dayResetHour: 4,
   lastUpdate: getDayKeyFor(),
   lastMonth: getDayKeyFor().slice(0, 7),
@@ -181,6 +183,12 @@ const weeklyRecap = document.getElementById('weekly-recap');
 const clearData = document.getElementById('clear-data');
 const themeToggle = document.getElementById('theme-toggle');
 const settingsButton = document.getElementById('settings-button');
+const syncEnabledInput = document.getElementById('sync-enabled');
+const syncEndpointInput = document.getElementById('sync-endpoint');
+const syncTokenInput = document.getElementById('sync-token');
+const syncSaveButton = document.getElementById('sync-save');
+const syncNowButton = document.getElementById('sync-now');
+const syncStatus = document.getElementById('sync-status');
 const showIbAnnales = document.getElementById('show-ib-annales');
 const monthlyQuickButton = document.getElementById('start-monthly-quick');
 const viewMyStats = document.getElementById('view-my-stats');
@@ -221,6 +229,8 @@ let reviewCorrect = 0;
 let quizState = null;
 let monthlyState = null;
 let currentLibraryGroup = null;
+let syncInFlight = false;
+let syncDebounceTimeout = null;
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -246,8 +256,229 @@ function deepMerge(base, override) {
   return base;
 }
 
-function saveState() {
+function touchSyncMeta() {
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
+  if (!state.syncMeta.usersUpdatedAt) state.syncMeta.usersUpdatedAt = { G: 0, R: 0 };
+  const now = Date.now();
+  if (state.currentUser && state.syncMeta.usersUpdatedAt[state.currentUser] != null) {
+    state.syncMeta.usersUpdatedAt[state.currentUser] = now;
+  }
+  state.syncMeta.globalUpdatedAt = now;
+}
+
+function saveState(options = {}) {
+  if (!options.skipTouch) {
+    touchSyncMeta();
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!options.skipSync) {
+    scheduleSync();
+  }
+}
+
+function isSyncConfigured() {
+  return Boolean(state.sync?.enabled && state.sync?.endpoint);
+}
+
+function setSyncStatus(message) {
+  if (!syncStatus) return;
+  syncStatus.textContent = message;
+}
+
+function getSyncHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.sync?.token) {
+    headers.Authorization = `Bearer ${state.sync.token}`;
+  }
+  return headers;
+}
+
+function buildSyncDocument() {
+  return {
+    version: 1,
+    updatedAt: Date.now(),
+    meta: {
+      usersUpdatedAt: { ...(state.syncMeta?.usersUpdatedAt || { G: 0, R: 0 }) },
+      globalUpdatedAt: state.syncMeta?.globalUpdatedAt || 0
+    },
+    data: {
+      users: {
+        G: JSON.parse(JSON.stringify(getUser('G'))),
+        R: JSON.parse(JSON.stringify(getUser('R')))
+      },
+      questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
+      streak: state.streak,
+      pending: state.pending,
+      jokers: state.jokers,
+      dailyThresholds: JSON.parse(JSON.stringify(state.dailyThresholds || { reading: 5, cards: 3, tested: 1 })),
+      dayResetHour: state.dayResetHour,
+      lastUpdate: state.lastUpdate,
+      lastMonth: state.lastMonth
+    }
+  };
+}
+
+function sanitizeSyncDoc(doc) {
+  if (!doc || typeof doc !== 'object') return null;
+  const safe = {
+    version: Number(doc.version) || 1,
+    updatedAt: Number(doc.updatedAt) || 0,
+    meta: {
+      usersUpdatedAt: {
+        G: Number(doc.meta?.usersUpdatedAt?.G) || 0,
+        R: Number(doc.meta?.usersUpdatedAt?.R) || 0
+      },
+      globalUpdatedAt: Number(doc.meta?.globalUpdatedAt) || 0
+    },
+    data: {
+      users: {
+        G: doc.data?.users?.G || JSON.parse(JSON.stringify(defaultState.users.G)),
+        R: doc.data?.users?.R || JSON.parse(JSON.stringify(defaultState.users.R))
+      },
+      questionBank: Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : [],
+      streak: Number(doc.data?.streak) || 0,
+      pending: Boolean(doc.data?.pending),
+      jokers: Number(doc.data?.jokers) || 0,
+      dailyThresholds: doc.data?.dailyThresholds || { reading: 5, cards: 3, tested: 1 },
+      dayResetHour: Number(doc.data?.dayResetHour ?? 4),
+      lastUpdate: doc.data?.lastUpdate || getToday(),
+      lastMonth: doc.data?.lastMonth || getToday().slice(0, 7)
+    }
+  };
+  return safe;
+}
+
+function mergeQuestionBank(localQuestions, remoteQuestions) {
+  const merged = new Map();
+  [...remoteQuestions, ...localQuestions].forEach(question => {
+    if (!question?.id) return;
+    const existing = merged.get(question.id);
+    if (!existing) {
+      merged.set(question.id, question);
+      return;
+    }
+    const existingTime = new Date(existing.createdAt || 0).getTime() || 0;
+    const currentTime = new Date(question.createdAt || 0).getTime() || 0;
+    merged.set(question.id, currentTime >= existingTime ? question : existing);
+  });
+  return [...merged.values()];
+}
+
+function mergeSyncDocs(localDoc, remoteDoc) {
+  if (!remoteDoc) return localDoc;
+  const local = sanitizeSyncDoc(localDoc);
+  const remote = sanitizeSyncDoc(remoteDoc);
+  if (!local || !remote) return localDoc;
+
+  const merged = JSON.parse(JSON.stringify(local));
+  ['G', 'R'].forEach(userId => {
+    const localTs = local.meta.usersUpdatedAt[userId] || 0;
+    const remoteTs = remote.meta.usersUpdatedAt[userId] || 0;
+    if (remoteTs > localTs) {
+      merged.data.users[userId] = remote.data.users[userId];
+      merged.meta.usersUpdatedAt[userId] = remoteTs;
+    } else {
+      merged.meta.usersUpdatedAt[userId] = localTs;
+    }
+  });
+
+  merged.data.questionBank = mergeQuestionBank(local.data.questionBank, remote.data.questionBank);
+
+  if ((remote.meta.globalUpdatedAt || 0) > (local.meta.globalUpdatedAt || 0)) {
+    merged.data.streak = remote.data.streak;
+    merged.data.pending = remote.data.pending;
+    merged.data.jokers = remote.data.jokers;
+    merged.data.dailyThresholds = remote.data.dailyThresholds;
+    merged.data.dayResetHour = remote.data.dayResetHour;
+    merged.data.lastUpdate = remote.data.lastUpdate;
+    merged.data.lastMonth = remote.data.lastMonth;
+    merged.meta.globalUpdatedAt = remote.meta.globalUpdatedAt;
+  }
+
+  merged.updatedAt = Date.now();
+  return merged;
+}
+
+function applySyncDoc(doc) {
+  const safe = sanitizeSyncDoc(doc);
+  if (!safe) return;
+  state.users.G = safe.data.users.G;
+  state.users.R = safe.data.users.R;
+  state.questionBank = safe.data.questionBank;
+  state.streak = safe.data.streak;
+  state.pending = safe.data.pending;
+  state.jokers = safe.data.jokers;
+  state.dailyThresholds = safe.data.dailyThresholds;
+  state.dayResetHour = safe.data.dayResetHour;
+  state.lastUpdate = safe.data.lastUpdate;
+  state.lastMonth = safe.data.lastMonth;
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
+  state.syncMeta.usersUpdatedAt = safe.meta.usersUpdatedAt;
+  state.syncMeta.globalUpdatedAt = safe.meta.globalUpdatedAt;
+}
+
+async function pullRemoteDoc() {
+  const response = await fetch(state.sync.endpoint, {
+    method: 'GET',
+    cache: 'no-store',
+    headers: getSyncHeaders()
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET ${response.status}`);
+  const json = await response.json();
+  if (json?.data && json?.meta) return json;
+  if (json?.state && json?.meta) return json.state;
+  return json;
+}
+
+async function pushRemoteDoc(doc) {
+  const response = await fetch(state.sync.endpoint, {
+    method: 'PUT',
+    headers: getSyncHeaders(),
+    body: JSON.stringify(doc)
+  });
+  if (!response.ok) throw new Error(`PUT ${response.status}`);
+}
+
+async function syncNow(showFeedback = false) {
+  if (!isSyncConfigured()) {
+    if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
+    return false;
+  }
+  if (!navigator.onLine) {
+    if (showFeedback) setSyncStatus('Hors ligne, sync en attente.');
+    return false;
+  }
+  if (syncInFlight) return false;
+  syncInFlight = true;
+  if (showFeedback) setSyncStatus('Synchronisation en cours...');
+  try {
+    const localDoc = buildSyncDocument();
+    const remoteDoc = await pullRemoteDoc();
+    const mergedDoc = mergeSyncDocs(localDoc, remoteDoc);
+    applySyncDoc(mergedDoc);
+    await pushRemoteDoc(mergedDoc);
+    state.syncMeta.lastSyncedAt = Date.now();
+    saveState({ skipTouch: true, skipSync: true });
+    renderApp();
+    const timeLabel = new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR');
+    setSyncStatus(`Synchronisé (${timeLabel}).`);
+    return true;
+  } catch (error) {
+    setSyncStatus(`Erreur sync: ${error.message}`);
+    return false;
+  } finally {
+    syncInFlight = false;
+  }
+}
+
+function scheduleSync(delay = 1200) {
+  if (!isSyncConfigured()) return;
+  if (!navigator.onLine) return;
+  clearTimeout(syncDebounceTimeout);
+  syncDebounceTimeout = setTimeout(() => {
+    syncNow(false);
+  }, delay);
 }
 
 function generateSampleFlashcards() {
@@ -986,6 +1217,25 @@ function renderSettings() {
   adminPanel.classList.toggle('hidden', state.currentUser !== 'R');
   if (state.currentUser === 'R') {
     populateAdminInputs();
+  }
+  if (syncEnabledInput) syncEnabledInput.checked = Boolean(state.sync?.enabled);
+  if (syncEndpointInput) syncEndpointInput.value = state.sync?.endpoint || '';
+  if (syncTokenInput) syncTokenInput.value = state.sync?.token || '';
+  if (syncStatus) {
+    if (!state.sync?.enabled) {
+      setSyncStatus('Sync désactivée.');
+    } else if (!state.sync?.endpoint) {
+      setSyncStatus('Ajoute une URL de synchronisation.');
+    } else if (!navigator.onLine) {
+      setSyncStatus('Hors ligne, sync en attente.');
+    } else {
+      const lastSynced = state.syncMeta?.lastSyncedAt;
+      if (lastSynced) {
+        setSyncStatus(`Dernière sync: ${new Date(lastSynced).toLocaleTimeString('fr-FR')}`);
+      } else {
+        setSyncStatus('Sync activée, en attente du premier envoi.');
+      }
+    }
   }
 }
 
@@ -2096,6 +2346,14 @@ function attachHandlers() {
   clearData.addEventListener('click', resetAppData);
   settingsButton.addEventListener('click', () => goToPage('settings'));
   themeToggle.addEventListener('click', toggleTheme);
+  if (syncSaveButton) syncSaveButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveSyncSettings();
+  });
+  if (syncNowButton) syncNowButton.addEventListener('click', async (event) => {
+    event.preventDefault();
+    await syncNow(true);
+  });
   document.querySelectorAll('.tab-button').forEach(btn => btn.addEventListener('click', () => goToPage(btn.dataset.nav)));
 }
 
@@ -2112,6 +2370,18 @@ function toggleTheme() {
   saveState();
 }
 
+function saveSyncSettings() {
+  if (!state.sync) state.sync = { enabled: false, endpoint: '', token: '' };
+  state.sync.enabled = Boolean(syncEnabledInput?.checked);
+  state.sync.endpoint = (syncEndpointInput?.value || '').trim();
+  state.sync.token = (syncTokenInput?.value || '').trim();
+  saveState({ skipTouch: true });
+  renderSettings();
+  if (state.sync.enabled && state.sync.endpoint) {
+    syncNow(true);
+  }
+}
+
 function initUserDaily() {
   const user = getUser(state.currentUser);
   getDaily(user);
@@ -2120,6 +2390,8 @@ function initUserDaily() {
 }
 
 function init() {
+  if (!state.sync) state.sync = { enabled: false, endpoint: '', token: '' };
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
   ensureSampleData();
   checkMonthTransition();
   checkDayTransition();
@@ -2135,6 +2407,16 @@ function init() {
   }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(console.error);
+  }
+  window.addEventListener('online', () => {
+    setSyncStatus('Connexion retrouvée, synchronisation...');
+    syncNow(false);
+  });
+  window.addEventListener('offline', () => {
+    setSyncStatus('Hors ligne, sync en attente.');
+  });
+  if (isSyncConfigured()) {
+    scheduleSync(300);
   }
 }
 

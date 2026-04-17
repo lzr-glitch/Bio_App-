@@ -432,6 +432,21 @@
           <button class="secondary-button" id="theme-toggle">Passer en mode sombre</button>
           <button class="danger-button" id="clear-data">Réinitialiser toutes les données</button>
           <p class="small-note">Les données sont stockées localement et l’app est pensée pour fonctionner hors ligne.</p>
+          <hr />
+          <h3>Synchronisation internet</h3>
+          <label class="sync-toggle-row">
+            <input type="checkbox" id="sync-enabled" />
+            Activer la synchronisation
+          </label>
+          <label>URL de synchronisation (GET/PUT JSON)</label>
+          <input type="text" id="sync-endpoint" placeholder="https://.../shared-state.json" />
+          <label>Token (optionnel)</label>
+          <input type="password" id="sync-token" placeholder="Bearer token (si nécessaire)" />
+          <div class="form-actions">
+            <button class="primary-button" id="sync-save">Enregistrer la sync</button>
+            <button class="secondary-button" id="sync-now">Synchroniser maintenant</button>
+          </div>
+          <p class="small-note" id="sync-status">Sync désactivée.</p>
         </div>
         <div class="card admin-panel hidden" id="admin-panel">
           <h3>Mode admin (R)</h3>
