@@ -73,7 +73,7 @@
           <div>
             <div class="highlight-label">Cartes non vues de l’autre</div>
             <strong id="other-unseen-count">0</strong>
-            <button class="secondary-button small" data-nav="flashcards" data-action="view-other-unseen">Voir</button>
+            <button class="secondary-button small" data-nav="flashcards">Voir</button>
           </div>
         </div>
 
@@ -207,16 +207,6 @@
             <option value="30" selected>30</option>
             <option value="50">50</option>
           </select>
-          <label style="margin-top: 12px;">Chapitre/Tag</label>
-          <select id="review-tag-filter">
-            <option value="">Tous les chapitres</option>
-          </select>
-          <div style="margin-top: 12px;">
-            <label style="display: flex; align-items: center; gap: 8px;">
-              <input type="checkbox" id="review-today-only" />
-              <span>Tester seulement les cartes d'aujourd'hui</span>
-            </label>
-          </div>
           <button class="primary-button" id="start-review">Commencer le test</button>
         </div>
         <div class="card review-card hidden" id="review-card">
@@ -361,10 +351,6 @@
         <div class="page-header">
           <button class="back-button" data-nav="home">← Retour</button>
           <h2>Profil</h2>
-        </div>
-        <div class="card small-card admin-sync-card hidden" id="admin-sync-card">
-          <button type="button" class="primary-button" id="sync-data-now">Synchroniser les données</button>
-          <p class="small-note">Force une mise à jour avec les données distantes.</p>
         </div>
         <div class="profile-columns">
           <div class="profile-block">

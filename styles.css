@@ -877,34 +877,6 @@ textarea {
   box-shadow: inset 0 0 0 1px rgba(108, 155, 114, 0.1);
 }
 
-.flashcard-answers-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.flashcard-answer-button {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 16px;
-  color: var(--text);
-  cursor: pointer;
-  transition: all 180ms ease;
-  text-align: left;
-  font-size: 1rem;
-}
-
-.flashcard-answer-button:hover {
-  background: var(--surface-strong);
-  border-color: var(--primary);
-  transform: translateY(-2px);
-}
-
-.flashcard-answer-button:active {
-  transform: translateY(0);
-}
-
 .options-list button {
   text-align: left;
   width: 100%;

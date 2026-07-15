@@ -143,8 +143,8 @@ const finishQuiz = document.getElementById('finish-quiz');
 const quizCreateChapter = document.getElementById('quiz-create-chapter');
 const quizCreateTheme = document.getElementById('quiz-create-theme');
 const quizCreateQuestion = document.getElementById('quiz-create-question');
-const quizCreateOptions = document.getElementById('quiz-create-options');
-const quizCreateAnswer = document.getElementById('quiz-create-answer');
+const quizCreateOptionsList = document.getElementById('quiz-create-options-list');
+const quizCreateAddOption = document.getElementById('quiz-create-add-option');
 const quizCreateSave = document.getElementById('quiz-create-save');
 const quizCreateClear = document.getElementById('quiz-create-clear');
 const quizCreateStatus = document.getElementById('quiz-create-status');
@@ -733,6 +733,10 @@ function canDeleteQuizQuestion(question) {
 }
 
 function getDaily(user, day = getToday()) {
+  if (!user) return { reading: 0, cards: 0, tested: 0, complete: false };
+  if (!user.daily || typeof user.daily !== 'object') {
+    user.daily = {};
+  }
   if (!user.daily[day]) {
     user.daily[day] = { reading: 0, cards: 0, tested: 0, complete: false };
   }
@@ -859,7 +863,8 @@ function applyPageTheme(page) {
 
 function markOtherCardsSeen() {
   const other = getUser(getOtherUserId());
-  other.flashcards.forEach(card => {
+  const flashcards = Array.isArray(other.flashcards) ? other.flashcards : [];
+  flashcards.forEach(card => {
     if (!card.seenBy) card.seenBy = [];
     if (!card.seenBy.includes(state.currentUser)) card.seenBy.push(state.currentUser);
   });
@@ -906,18 +911,20 @@ function updateHome() {
   const other = getUser(getOtherUserId());
   const today = getDaily(user);
   const otherToday = getDaily(other);
+  const otherFlashcards = Array.isArray(other.flashcards) ? other.flashcards : [];
   setText(todayReading, `${today.reading} min`);
   setText(todayFlashcards, today.cards);
   setText(todayTested, today.tested);
   setText(otherProgress, otherToday.complete ? 'L’autre a terminé' : 'En cours');
   setText(homeNotice, today.complete ? 'Tu as terminé ta journée !' : 'Il te reste des étapes.');
-  const unseenCount = other.flashcards.filter(card => !card.seenBy || !card.seenBy.includes(state.currentUser)).length;
+  const unseenCount = otherFlashcards.filter(card => !card.seenBy || !card.seenBy.includes(state.currentUser)).length;
   setText(otherUnseenCount, unseenCount);
 }
 
 function renderReading() {
   const user = getUser(state.currentUser);
-  const days = Object.keys(user.reading).sort((a, b) => b.localeCompare(a)).slice(0, 7);
+  const readings = user.reading && typeof user.reading === 'object' ? user.reading : {};
+  const days = Object.keys(readings).sort((a, b) => b.localeCompare(a)).slice(0, 7);
   readingHistory.innerHTML = '';
   days.forEach(day => {
     const item = document.createElement('div');
@@ -1101,7 +1108,7 @@ function renderFlashcards() {
     return;
   }
 
-  const cards = user.flashcards.filter(card => card.date === getToday());
+  const cards = Array.isArray(user.flashcards) ? user.flashcards.filter(card => card.date === getToday()) : [];
   if (cards.length === 0) {
     todayCardsList.innerHTML = '<div class="history-item"><span>Aucune carte créée aujourd’hui</span></div>';
     return;
@@ -1468,14 +1475,28 @@ function renderSettings() {
 }
 
 function getProfileDisplayStats(user) {
+  if (!user) {
+    return {
+      totalCards: 0,
+      weekCards: 0,
+      totalTests: 0,
+      totalQuizzes: 0,
+      successRate: 0,
+      totalReading: 0
+    };
+  }
   const override = user.statsOverride || {};
   const baseStats = computeStats(user);
-  const totalReading = override.totalReading != null ? override.totalReading : Object.values(user.reading).reduce((sum, v) => sum + v, 0);
+  const readings = user.reading && typeof user.reading === 'object' ? user.reading : {};
+  const flashcards = Array.isArray(user.flashcards) ? user.flashcards : [];
+  const tests = Array.isArray(user.tests) ? user.tests : [];
+  const quizzes = Array.isArray(user.quizzes) ? user.quizzes : [];
+  const totalReading = override.totalReading != null ? override.totalReading : Object.values(readings || {}).reduce((sum, v) => sum + Number(v || 0), 0);
   return {
-    totalCards: override.totalCards != null ? override.totalCards : user.flashcards.length,
+    totalCards: override.totalCards != null ? override.totalCards : flashcards.length,
     weekCards: override.weekCards != null ? override.weekCards : baseStats.weekCards,
-    totalTests: override.totalTests != null ? override.totalTests : user.tests.length,
-    totalQuizzes: override.totalQuizzes != null ? override.totalQuizzes : user.quizzes.length,
+    totalTests: override.totalTests != null ? override.totalTests : tests.length,
+    totalQuizzes: override.totalQuizzes != null ? override.totalQuizzes : quizzes.length,
     successRate: override.successRate != null ? override.successRate : baseStats.successRate,
     totalReading
   };
@@ -1589,10 +1610,14 @@ function showProfileBadges(userKey) {
 }
 
 function computeStats(user) {
+  if (!user) return { weekCards: 0, successRate: 0 };
   const weekDays = getLastDays(7);
-  const weekCards = user.flashcards.filter(card => weekDays.includes(card.date)).length;
-  const totalTests = user.tests.length + user.quizzes.length;
-  const successful = user.tests.filter(t => t.score >= 50).length + user.quizzes.filter(q => q.correct).length;
+  const flashcards = Array.isArray(user.flashcards) ? user.flashcards : [];
+  const tests = Array.isArray(user.tests) ? user.tests : [];
+  const quizzes = Array.isArray(user.quizzes) ? user.quizzes : [];
+  const weekCards = flashcards.filter(card => weekDays.includes(card.date)).length;
+  const totalTests = tests.length + quizzes.length;
+  const successful = tests.filter(t => t.score >= 50).length + quizzes.filter(q => q.correct).length;
   const successRate = totalTests === 0 ? 0 : Math.round((successful / totalTests) * 100);
   return { weekCards, successRate };
 }
@@ -1997,27 +2022,52 @@ function resetQuizCreateForm() {
   if (quizCreateChapter) quizCreateChapter.value = '';
   if (quizCreateTheme) quizCreateTheme.value = '';
   if (quizCreateQuestion) quizCreateQuestion.value = '';
-  if (quizCreateOptions) quizCreateOptions.value = '';
-  if (quizCreateAnswer) quizCreateAnswer.value = '';
+  // clear dynamic options
+  if (quizCreateOptionsList) {
+    quizCreateOptionsList.innerHTML = '';
+    addQuizCreateOption();
+    addQuizCreateOption();
+  }
+}
+
+function addQuizCreateOption(value = '', checked = false) {
+  if (!quizCreateOptionsList) return;
+  const idx = quizCreateOptionsList.querySelectorAll('.quiz-create-option-row').length;
+  const row = document.createElement('div');
+  row.className = 'quiz-create-option-row';
+  row.innerHTML = `
+    <input type="checkbox" class="quiz-create-option-correct" ${checked ? 'checked' : ''} aria-label="Bonne réponse" />
+    <input type="text" class="quiz-create-option-input" placeholder="Proposition ${idx + 1}" value="${escapeHtml(value)}" />
+    <button type="button" class="secondary-button quiz-create-option-remove">Supprimer</button>
+  `;
+  quizCreateOptionsList.appendChild(row);
+  const removeBtn = row.querySelector('.quiz-create-option-remove');
+  removeBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    row.remove();
+  });
 }
 
 function createQuizQuestion() {
-  if (!quizCreateQuestion || !quizCreateOptions || !quizCreateAnswer) return;
+  if (!quizCreateQuestion || !quizCreateOptionsList) return;
   const chapter = (quizCreateChapter?.value || '').trim() || 'IBO';
   const theme = (quizCreateTheme?.value || '').trim() || 'Création manuelle';
   const question = quizCreateQuestion.value.trim();
-  const options = quizCreateOptions.value
-    .split('\n')
-    .map(option => option.trim())
-    .filter(Boolean);
-  const answer = quizCreateAnswer.value.trim();
+  // collect options from rows
+  const rows = Array.from(quizCreateOptionsList.querySelectorAll('.quiz-create-option-row'));
+  const options = [];
+  const correctIndices = [];
+  rows.forEach((row, idx) => {
+    const input = row.querySelector('.quiz-create-option-input');
+    const chk = row.querySelector('.quiz-create-option-correct');
+    const val = input?.value.trim();
+    if (!val) return;
+    options.push(val);
+    if (chk?.checked) correctIndices.push(options.length - 1);
+  });
 
-  if (!question || options.length < 2 || !answer) {
-    alert('Ajoute une question, au moins 2 options et une bonne réponse.');
-    return;
-  }
-  if (!options.includes(answer)) {
-    alert('La bonne réponse doit correspondre exactement à une option.');
+  if (!question || options.length < 2 || correctIndices.length === 0) {
+    alert('Ajoute une question, au moins 2 options et au moins une bonne réponse.');
     return;
   }
 
@@ -2027,7 +2077,7 @@ function createQuizQuestion() {
     theme,
     question,
     options,
-    answer,
+    correctAnswers: correctIndices,
     source: 'Manuel',
     createdBy: state.currentUser,
     createdAt: new Date().toISOString()
@@ -2163,8 +2213,38 @@ function gradeReviewAnswer(selectedIndex, correctIndex) {
     reviewCorrect += 1;
   }
   
-  reviewIndex += 1;
-  renderReviewCard();
+  // If correct, advance immediately
+  if (isCorrect) {
+    reviewIndex += 1;
+    saveState();
+    renderReviewCard();
+    return;
+  }
+
+  // If wrong, show explanation and highlight correct answer; require user to click 'Suivant'
+  // disable buttons
+  document.querySelectorAll('.flashcard-answer-button').forEach((b) => b.disabled = true);
+  const buttons = Array.from(document.querySelectorAll('.flashcard-answer-button'));
+  buttons.forEach((b, idx) => {
+    if (idx === correctIndex) b.classList.add('correct');
+    if (idx === selectedIndex && idx !== correctIndex) b.classList.add('chosen-wrong');
+  });
+  // show explanation and next button
+  const info = document.createElement('div');
+  info.className = 'flashcard-explanation';
+  info.innerHTML = `<p>${escapeHtml(card.explanation || 'Aucune explication fournie.')}</p>`;
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'primary-button';
+  nextBtn.textContent = 'Suivant';
+  nextBtn.addEventListener('click', () => {
+    info.remove();
+    reviewIndex += 1;
+    saveState();
+    renderReviewCard();
+  });
+  info.appendChild(nextBtn);
+  reviewAnswer.parentNode.appendChild(info);
 }
 
 function finishReviewSession() {
@@ -2244,41 +2324,103 @@ function renderQuizRunCard() {
   quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length}`;
   quizQuestion.textContent = question.question;
   quizOptions.innerHTML = '';
-  question.options.forEach(option => {
+  // determine multi-select
+  const correctIndices = Array.isArray(question.correctAnswers) ? question.correctAnswers : (question.answer ? [question.options.indexOf(question.answer)] : []);
+  const multi = correctIndices.length > 1;
+  question.options.forEach((option, idx) => {
     const btn = document.createElement('button');
     btn.className = 'option-button';
     btn.type = 'button';
+    btn.dataset.index = String(idx);
     btn.textContent = option;
-    btn.addEventListener('click', () => selectQuizOption(btn, option));
+    btn.addEventListener('click', () => selectQuizOption(btn, idx, multi));
     quizOptions.appendChild(btn);
   });
-  quizState.selected = null;
+  quizState.selected = multi ? new Set() : null;
   validateQuiz.disabled = false;
   quizSummary.classList.add('hidden');
   quizProgressFill.style.width = `${(quizState.index / quizState.questions.length) * 100}%`;
   quizProgressLabel.textContent = `${quizState.index + 1} / ${quizState.questions.length}`;
 }
 
+function selectQuizOption(btn, idx, multi) {
+  if (!quizState) return;
+  if (multi) {
+    if (!quizState.selected) quizState.selected = new Set();
+    if (quizState.selected.has(idx)) {
+      quizState.selected.delete(idx);
+      btn.classList.remove('selected');
+    } else {
+      quizState.selected.add(idx);
+      btn.classList.add('selected');
+    }
+  } else {
+    // single select
+    // clear previous
+    Array.from(quizOptions.querySelectorAll('.option-button')).forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    quizState.selected = idx;
+  }
+}
+
 function validateQuizAnswer() {
-  if (!quizState || !quizState.selected) {
+  if (!quizState || (!quizState.selected || (quizState.selected instanceof Set && quizState.selected.size === 0))) {
     alert('Choisis une réponse.');
     return;
   }
   const question = quizState.questions[quizState.index];
-  const correct = quizState.selected === question.answer;
+  const correctIndices = Array.isArray(question.correctAnswers) ? question.correctAnswers : (question.answer ? [question.options.indexOf(question.answer)] : []);
+  let selectedIndices = [];
+  if (quizState.selected instanceof Set) selectedIndices = Array.from(quizState.selected);
+  else selectedIndices = [quizState.selected];
+
+  const setsEqual = (a, b) => a.length === b.length && a.every(v => b.includes(v));
+  const isCorrect = setsEqual([...selectedIndices].sort((x,y)=>x-y), [...correctIndices].sort((x,y)=>x-y));
+
   const user = getUser(state.currentUser);
-  user.quizzes.push({ date: getToday(), questionId: question.id, correct, score: correct ? 100 : 0, chapter: question.chapter });
+  user.quizzes.push({ date: getToday(), questionId: question.id, correct: isCorrect, score: isCorrect ? 100 : 0, chapter: question.chapter });
   const daily = getDaily(user);
   daily.tested = user.tests.filter(test => test.date === getToday()).length + user.quizzes.filter(quiz => quiz.date === getToday()).length;
   tryCompleteDay(user);
-  if (correct) quizState.correct += 1;
-  saveState();
-  quizState.index += 1;
-  if (quizState.index < quizState.questions.length) {
-    renderQuizRunCard();
+  if (isCorrect) {
+    quizState.correct += 1;
+    saveState();
+    // advance immediately
+    quizState.index += 1;
+    if (quizState.index < quizState.questions.length) {
+      renderQuizRunCard();
+      return;
+    }
+    showQuizSummary();
     return;
   }
-  showQuizSummary();
+
+  // incorrect -> show explanation and correct answers, require user to click 'Suivant'
+  saveState();
+  // highlight correct options
+  Array.from(quizOptions.querySelectorAll('.option-button')).forEach(btn => {
+    const idx = Number(btn.dataset.index);
+    if (correctIndices.includes(idx)) btn.classList.add('correct');
+    else if ((quizState.selected instanceof Set && quizState.selected.has(idx)) || quizState.selected === idx) btn.classList.add('chosen-wrong');
+    btn.disabled = true;
+  });
+  // show explanation + next button
+  const explanationDiv = document.createElement('div');
+  explanationDiv.className = 'quiz-explanation';
+  explanationDiv.innerHTML = `<p>${escapeHtml(question.explanation || 'Explication non fournie.')}</p>`;
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'primary-button';
+  nextBtn.textContent = 'Suivant';
+  nextBtn.addEventListener('click', () => {
+    // cleanup
+    explanationDiv.remove();
+    quizState.index += 1;
+    if (quizState.index < quizState.questions.length) renderQuizRunCard();
+    else showQuizSummary();
+  });
+  explanationDiv.appendChild(nextBtn);
+  quizOptions.parentNode.appendChild(explanationDiv);
 }
 
 function showQuizSummary() {
@@ -2343,7 +2485,8 @@ function getVisibleQuizQuestions() {
       : (owner === state.currentUser || (!owner && question.source === 'Annales'));
     if (!matchesScope) return false;
     if (!searchText) return true;
-    return [question.question, question.chapter, question.theme, question.answer]
+    const answersText = (question.answer || (Array.isArray(question.correctAnswers) ? question.correctAnswers.map(i => question.options?.[i]).join(' ') : '') || '');
+    return [question.question, question.chapter, question.theme, answersText]
       .filter(Boolean)
       .some(text => String(text).toLowerCase().includes(searchText));
   });
@@ -2521,6 +2664,10 @@ function resetAppData() {
   window.location.reload();
 }
 
+function revealAnswer() {
+  if (reviewAnswer) reviewAnswer.classList.remove('hidden');
+}
+
 function attachHandlers() {
   document.querySelectorAll('[data-user]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2598,6 +2745,10 @@ function attachHandlers() {
     event.preventDefault();
     addAnswerInput();
   });
+  if (quizCreateAddOption) quizCreateAddOption.addEventListener('click', (event) => {
+    event.preventDefault();
+    addQuizCreateOption();
+  });
   if (cardAnswersEditor) cardAnswersEditor.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action="remove-answer"]');
     if (!button) return;
@@ -2660,7 +2811,7 @@ function attachHandlers() {
       if (quizCreateStatus) quizCreateStatus.textContent = '';
     });
   }
-  [quizCreateChapter, quizCreateTheme, quizCreateQuestion, quizCreateOptions, quizCreateAnswer].forEach(input => {
+  [quizCreateChapter, quizCreateTheme, quizCreateQuestion].forEach(input => {
     if (!input) return;
     input.addEventListener('input', () => {
       if (quizCreateStatus) quizCreateStatus.textContent = '';
@@ -2712,7 +2863,7 @@ function attachHandlers() {
     saveWorkNote(false);
   });
   startReview.addEventListener('click', startReviewSession);
-  showAnswer.addEventListener('click', revealAnswer);
+  if (showAnswer) showAnswer.addEventListener('click', revealAnswer);
   easyBtn.addEventListener('click', () => gradeReview('easy'));
   mediumBtn.addEventListener('click', () => gradeReview('medium'));
   hardBtn.addEventListener('click', () => gradeReview('hard'));
@@ -2800,6 +2951,7 @@ function init() {
   checkMonthTransition();
   checkDayTransition();
   renderQuizStatus();
+  resetFlashcardForm();
   attachHandlers();
   applyTheme();
   if (state.currentUser) {
@@ -2842,6 +2994,8 @@ function renderQuizStatus() {
     if (!canSeeAll && quizQuestionFilter.value === 'all') quizQuestionFilter.value = 'mine';
   }
   renderQuizQuestionManager();
+  // prepare quiz creation form (dynamic options)
+  if (quizCreateOptionsList) resetQuizCreateForm();
 }
 
 function shuffleArray(array) {
