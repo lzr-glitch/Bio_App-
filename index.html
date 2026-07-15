@@ -73,7 +73,7 @@
           <div>
             <div class="highlight-label">Cartes non vues de l’autre</div>
             <strong id="other-unseen-count">0</strong>
-            <button class="secondary-button small" data-nav="flashcards">Voir</button>
+            <button class="secondary-button small" data-nav="flashcards" data-action="view-other-unseen">Voir</button>
           </div>
         </div>
 
@@ -125,6 +125,10 @@
           <textarea id="card-explanation" rows="3" placeholder="Explique avec tes mots"></textarea>
           <label>Message pour l’autre</label>
           <input type="text" id="card-note" placeholder="Fais attention à cette notion" />
+          <label>Réponses possibles</label>
+          <div id="card-answers-editor" class="answer-editor"></div>
+          <button type="button" class="secondary-button" id="add-card-answer">Ajouter une réponse</button>
+          <div class="small-note">Choisis la bonne réponse avec le bouton radio.</div>
           <div class="form-actions">
             <button class="primary-button" id="save-card">Enregistrer la carte</button>
             <button class="secondary-button" id="clear-card">Effacer</button>
@@ -207,6 +211,16 @@
             <option value="30" selected>30</option>
             <option value="50">50</option>
           </select>
+          <label style="margin-top: 12px;">Chapitre/Tag</label>
+          <select id="review-tag-filter">
+            <option value="">Tous les chapitres</option>
+          </select>
+          <div style="margin-top: 12px;">
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="review-today-only" />
+              <span>Tester seulement les cartes d'aujourd'hui</span>
+            </label>
+          </div>
           <button class="primary-button" id="start-review">Commencer le test</button>
         </div>
         <div class="card review-card hidden" id="review-card">
@@ -270,10 +284,13 @@
           <input type="text" id="quiz-create-theme" placeholder="Ex: ADN, transcription" />
           <label>Question</label>
           <textarea id="quiz-create-question" rows="3" placeholder="Écris la question ici"></textarea>
-          <label>Options (une par ligne)</label>
-          <textarea id="quiz-create-options" rows="4" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D"></textarea>
-          <label>Bonne réponse (doit correspondre à une option)</label>
-          <input type="text" id="quiz-create-answer" placeholder="Option exacte" />
+          <label>Options</label>
+          <div id="quiz-create-options-list" class="quiz-create-options-list">
+            <!-- rows inserted by JS -->
+          </div>
+          <div style="margin-top:8px;">
+            <button type="button" class="secondary-button" id="quiz-create-add-option">Ajouter une proposition</button>
+          </div>
           <div class="form-actions">
             <button class="danger-button" id="quiz-create-save">Enregistrer la question</button>
             <button class="secondary-button" id="quiz-create-clear">Effacer</button>
@@ -351,6 +368,10 @@
         <div class="page-header">
           <button class="back-button" data-nav="home">← Retour</button>
           <h2>Profil</h2>
+        </div>
+        <div class="card small-card admin-sync-card hidden" id="admin-sync-card">
+          <button type="button" class="primary-button" id="sync-data-now">Synchroniser les données</button>
+          <p class="small-note">Force une mise à jour avec les données distantes.</p>
         </div>
         <div class="profile-columns">
           <div class="profile-block">
@@ -500,6 +521,6 @@
     <button class="tab-button" data-nav="chapter" aria-label="Chapitres"><img class="tab-icon" src="images/nav-chapter.svg" alt="Chapitres" /><span class="visually-hidden">Chapitres</span></button>
   </nav>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260710"></script>
 </body>
 </html>
