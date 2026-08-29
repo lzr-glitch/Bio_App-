@@ -1272,7 +1272,6 @@ function updateFlashcard(cardId, data) {
 }
 
 function renderFlashcards() {
-  setAdminFlashcardHint();
   const user = getUser(state.currentUser);
   const today = getDaily(user);
   todayCardsList.innerHTML = '';
