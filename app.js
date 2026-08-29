@@ -16,7 +16,7 @@ const defaultState = {
   pending: false,
   theme: 'dark',
   sync: { enabled: false, endpoint: '', token: '' },
-  syncMeta: { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 },
+  syncMeta: { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 },
   dayResetHour: 4,
   lastUpdate: getDayKeyFor(),
   lastMonth: getDayKeyFor().slice(0, 7),
@@ -185,6 +185,7 @@ const weaknessList = document.getElementById('weakness-list');
 const badgeList = document.getElementById('badge-list');
 const weeklyRecap = document.getElementById('weekly-recap');
 const clearData = document.getElementById('clear-data');
+const globalResetButton = document.getElementById('global-reset');
 const themeToggle = document.getElementById('theme-toggle');
 const settingsButton = document.getElementById('settings-button');
 const syncEnabledInput = document.getElementById('sync-enabled');
@@ -254,8 +255,9 @@ function deepMerge(base, override) {
 }
 
 function touchSyncMeta() {
-  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
   if (!state.syncMeta.usersUpdatedAt) state.syncMeta.usersUpdatedAt = { G: 0, R: 0 };
+  if (!Number.isFinite(state.syncMeta.resetEpoch)) state.syncMeta.resetEpoch = 0;
   const now = Date.now();
   if (state.currentUser && state.syncMeta.usersUpdatedAt[state.currentUser] != null) {
     state.syncMeta.usersUpdatedAt[state.currentUser] = now;
@@ -336,7 +338,8 @@ function buildSyncDocument() {
     updatedAt: Date.now(),
     meta: {
       usersUpdatedAt: { ...(state.syncMeta?.usersUpdatedAt || { G: 0, R: 0 }) },
-      globalUpdatedAt: state.syncMeta?.globalUpdatedAt || 0
+      globalUpdatedAt: state.syncMeta?.globalUpdatedAt || 0,
+      resetEpoch: Number(state.syncMeta?.resetEpoch) || 0
     },
     data: {
       users: {
@@ -366,7 +369,8 @@ function sanitizeSyncDoc(doc) {
         G: Number(doc.meta?.usersUpdatedAt?.G) || 0,
         R: Number(doc.meta?.usersUpdatedAt?.R) || 0
       },
-      globalUpdatedAt: Number(doc.meta?.globalUpdatedAt) || 0
+      globalUpdatedAt: Number(doc.meta?.globalUpdatedAt) || 0,
+      resetEpoch: Number(doc.meta?.resetEpoch) || 0
     },
     data: {
       users: {
@@ -550,6 +554,16 @@ function mergeSyncDocs(localDoc, remoteDoc) {
   const local = sanitizeSyncDoc(localDoc);
   const remote = sanitizeSyncDoc(remoteDoc);
   if (!local || !remote) return localDoc;
+  if ((remote.meta.resetEpoch || 0) > (local.meta.resetEpoch || 0)) {
+    const forcedRemote = JSON.parse(JSON.stringify(remote));
+    forcedRemote.updatedAt = Date.now();
+    return forcedRemote;
+  }
+  if ((local.meta.resetEpoch || 0) > (remote.meta.resetEpoch || 0)) {
+    const forcedLocal = JSON.parse(JSON.stringify(local));
+    forcedLocal.updatedAt = Date.now();
+    return forcedLocal;
+  }
 
   const merged = JSON.parse(JSON.stringify(local));
   const mergedDeleted = {
@@ -598,6 +612,7 @@ function applySyncDoc(doc) {
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
   state.syncMeta.usersUpdatedAt = safe.meta.usersUpdatedAt;
   state.syncMeta.globalUpdatedAt = safe.meta.globalUpdatedAt;
+  state.syncMeta.resetEpoch = safe.meta.resetEpoch || 0;
 }
 
 async function pullRemoteDoc() {
@@ -2750,46 +2765,47 @@ function finishMonthlyReview() {
   renderApp();
 }
 
-function resetAppData() {
-  if (!confirm('Tu veux vraiment supprimer toutes les données ?')) return;
-  // Remove stored state
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (e) {
-    console.warn('Could not remove local storage key', e);
+function buildResetState(options = {}) {
+  const nextState = JSON.parse(JSON.stringify(defaultState));
+  nextState.currentUser = state.currentUser;
+  nextState.theme = state.theme;
+  nextState.sync = JSON.parse(JSON.stringify(state.sync || defaultState.sync));
+  nextState.syncMeta.lastSyncedAt = options.keepLastSyncedAt ? Number(state.syncMeta?.lastSyncedAt) || 0 : 0;
+  nextState.syncMeta.resetEpoch = Number(options.resetEpoch) || 0;
+  nextState.syncMeta.globalUpdatedAt = Number(options.globalUpdatedAt) || 0;
+  nextState.lastUpdate = getDayKeyFor();
+  nextState.lastMonth = getDayKeyFor().slice(0, 7);
+  return nextState;
+}
+
+async function resetLocalData() {
+  if (!confirm('Réinitialiser uniquement cet appareil ?')) return;
+  const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch: Number(state.syncMeta?.resetEpoch) || 0 });
+  replaceState(nextState);
+  saveState({ skipTouch: true, skipSync: true });
+  renderApp();
+  if (isSyncConfigured() && navigator.onLine) {
+    await syncNow(true);
   }
+  window.location.reload();
+}
 
-  // Explicitly clear user data to avoid stale references
-  if (state && state.users) {
-    Object.keys(state.users).forEach((k) => {
-      const u = state.users[k];
-      u.flashcards = [];
-      u.quizzes = [];
-      u.reading = {};
-      u.readingSeconds = {};
-      u.tests = [];
-      u.daily = {};
-      u.monthlyTests = [];
-      u.badges = [];
-      u.statsOverride = {};
-      u.workHistory = [];
-      u.jokers = 0;
-      u.chapters = {};
-    });
+async function resetGlobalData() {
+  if (!confirm('Réinitialiser toutes les données sur tous les appareils synchronisés ?')) return;
+  const resetEpoch = Date.now();
+  const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
+  replaceState(nextState);
+  saveState({ skipTouch: true, skipSync: true });
+  renderApp();
+  if (isSyncConfigured() && navigator.onLine) {
+    const synced = await syncNow(true);
+    if (synced) {
+      setSyncStatus('Réinitialisation globale envoyée.');
+    }
+  } else {
+    setSyncStatus('Réinitialisation globale enregistrée. Elle sera envoyée dès que la sync sera active.');
+    saveState({ skipTouch: true });
   }
-
-  // Reset global state fields
-  state.streak = 0;
-  state.pending = false;
-  state.jokers = 0;
-  state.dailyThresholds = { reading: 5, cards: 3, tested: 1 };
-  state.questionBank = [];
-  state.lastUpdate = getDayKeyFor();
-
-  // Merge defaults for any missing keys
-  Object.assign(state, JSON.parse(JSON.stringify(defaultState)));
-  saveState();
-  // Force reload so the UI reflects cleared data
   window.location.reload();
 }
 
@@ -2975,7 +2991,12 @@ function attachHandlers() {
   startMonthly.addEventListener('click', startMonthlyTest);
   validateMonthly.addEventListener('click', validateMonthlyAnswer);
   finishMonthly.addEventListener('click', finishMonthlyReview);
-  clearData.addEventListener('click', resetAppData);
+  if (clearData) clearData.addEventListener('click', () => {
+    resetLocalData();
+  });
+  if (globalResetButton) globalResetButton.addEventListener('click', () => {
+    resetGlobalData();
+  });
   // Ensure settings navigation works on both click and touch (mobile)
   if (settingsButton) {
     settingsButton.addEventListener('click', () => goToPage('settings'));
