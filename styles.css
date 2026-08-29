@@ -321,6 +321,33 @@ button, input, textarea, select {
 .flashcard-explanation p { margin:0 0 8px 0; }
 .flashcard-answer-button.correct { outline: 2px solid rgba(112,204,129,0.22); }
 .flashcard-answer-button.chosen-wrong { outline: 2px solid rgba(255,79,79,0.22); }
+.flashcard-answer-prompt,
+.flashcard-answer-text {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.flashcard-answer-reveal {
+  display: grid;
+  gap: 12px;
+}
+
+.flashcard-category-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(244, 162, 97, 0.12);
+}
 
 .admin-panel {
   display: grid;
@@ -888,6 +915,10 @@ textarea {
   align-items: center;
 }
 
+.review-buttons {
+  margin-top: 14px;
+}
+
 .question-box,
 .answer-box,
 .options-list button {
@@ -1060,13 +1091,77 @@ textarea {
 }
 
 @media (max-width: 820px) {
+  body {
+    padding: 12px 10px calc(96px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .brand-card,
+  .card,
+  .page-header,
+  .profile-block,
+  .badge-grid,
+  .chapter-list,
+  .weakness-list,
+  .recap-card,
+  .filter-card,
+  .library-list {
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 150;
+    border-radius: 0 0 18px 18px;
+    margin: -12px -10px 14px;
+    padding: 12px 14px;
+  }
+
   .user-choice,
   .quick-actions,
   .summary-grid,
   .profile-columns,
-  .chart-labels,
-  .tabbar {
+  .chart-labels {
     grid-template-columns: 1fr;
+  }
+
+  .tile-button {
+    min-height: 64px;
+    padding: 14px;
+  }
+
+  .form-actions,
+  .timer-buttons,
+  .review-buttons,
+  .quiz-actions-row,
+  .work-actions-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .danger-button {
+    width: 100%;
+  }
+
+  .tabbar,
+  .bottom-nav {
+    width: 100%;
+    gap: 6px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-radius: 18px 18px 0 0;
+  }
+
+  .tab-button {
+    min-width: 0;
+    min-height: 48px;
+  }
+
+  .tab-emoji {
+    font-size: 1.25rem;
+    line-height: 1;
   }
 
   .stats-compare-grid {

@@ -118,17 +118,13 @@
           <label>Question</label>
           <textarea id="card-question" rows="3" placeholder="Quelle est la définition ?"></textarea>
           <label>Réponse</label>
-          <textarea id="card-answer" rows="3" placeholder="Réponse complète"></textarea>
+          <textarea id="card-answer" rows="4" placeholder="Réponse complète en phrase" ></textarea>
           <label>Tags (séparés par des virgules)</label>
           <input type="text" id="card-tags" placeholder="génétique, Campbell chapitre 6" />
           <label>Explication pour l’autre</label>
           <textarea id="card-explanation" rows="3" placeholder="Explique avec tes mots"></textarea>
           <label>Message pour l’autre</label>
           <input type="text" id="card-note" placeholder="Fais attention à cette notion" />
-          <label>Réponses possibles</label>
-          <div id="card-answers-editor" class="answer-editor"></div>
-          <button type="button" class="secondary-button" id="add-card-answer">Ajouter une réponse</button>
-          <div class="small-note">Choisis la bonne réponse avec le bouton radio.</div>
           <div class="form-actions">
             <button class="primary-button" id="save-card">Enregistrer la carte</button>
             <button class="secondary-button" id="clear-card">Effacer</button>
@@ -207,8 +203,9 @@
         <div class="card small-card">
           <label>Nombre de cartes</label>
           <select id="review-count">
+            <option value="10" selected>10</option>
             <option value="20">20</option>
-            <option value="30" selected>30</option>
+            <option value="30">30</option>
             <option value="50">50</option>
           </select>
           <label style="margin-top: 12px;">Chapitre/Tag</label>
@@ -229,9 +226,10 @@
           <div class="answer-box" id="review-answer"></div>
           <div class="review-buttons">
             <button class="secondary-button" id="show-answer">Voir la réponse</button>
-            <button class="secondary-button hidden" id="easy-btn">Facile</button>
-            <button class="primary-button hidden" id="medium-btn">Moyen</button>
-            <button class="danger-button hidden" id="hard-btn">Difficile</button>
+            <button class="primary-button hidden" id="easy-btn">Maîtrisé</button>
+            <button class="secondary-button hidden" id="medium-btn">Moyen +</button>
+            <button class="secondary-button hidden" id="hard-btn">Moyen -</button>
+            <button class="danger-button hidden" id="not-mastered-btn">Non maîtrisé</button>
           </div>
         </div>
         <div class="card small-card hidden" id="review-summary">
@@ -284,6 +282,8 @@
           <input type="text" id="quiz-create-theme" placeholder="Ex: ADN, transcription" />
           <label>Question</label>
           <textarea id="quiz-create-question" rows="3" placeholder="Écris la question ici"></textarea>
+          <label>Explication pour l’autre</label>
+          <textarea id="quiz-create-explanation" rows="3" placeholder="Explique pourquoi cette réponse est correcte"></textarea>
           <label>Options</label>
           <div id="quiz-create-options-list" class="quiz-create-options-list">
             <!-- rows inserted by JS -->
@@ -473,42 +473,17 @@
           <p class="small-note" id="sync-status">Sync désactivée.</p>
         </div>
         <div class="card admin-panel hidden" id="admin-panel">
-          <h3>Mode admin (R)</h3>
+          <h3>Réglage R</h3>
           <div class="admin-grid">
-            <div class="admin-control"><label>Streak commun</label><input type="number" id="admin-streak" min="0" /></div>
-            <div class="admin-control"><label>Jokers G</label><input type="number" id="admin-jokers-g" min="0" /></div>
-            <div class="admin-control"><label>Jokers R</label><input type="number" id="admin-jokers-r" min="0" /></div>
-            <div class="admin-control"><label>Lecture min quotidienne</label><input type="number" id="admin-target-reading" min="0" /></div>
-            <div class="admin-control"><label>Flashcards min quotidiennes</label><input type="number" id="admin-target-cards" min="0" /></div>
-            <div class="admin-control"><label>Tests min quotidiens</label><input type="number" id="admin-target-tested" min="0" /></div>
-            <div class="admin-control"><label>Heure de reset du jour</label><input type="number" id="admin-reset-hour" min="0" max="23" /></div>
-          </div>
-          <div class="admin-action-row">
-            <button type="button" class="secondary-button" id="admin-add-flashcard-other">Créer flashcard pour l'autre</button>
-            <button type="button" class="secondary-button" id="admin-add-test-other">Ajouter test pour l'autre</button>
-          </div>
-          <div class="admin-action-feedback" id="admin-action-feedback">Clique ici pour tester</div>
-          <div class="admin-stats-grid">
-            <div>
-              <h4>Stats G</h4>
-              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-g-cards" min="0" /></div>
-              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-g-tests" min="0" /></div>
-              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-g-quizzes" min="0" /></div>
-              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-g-reading" min="0" /></div>
-              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-g-rate" min="0" max="100" /></div>
-            </div>
-            <div>
-              <h4>Stats R</h4>
-              <div class="admin-control"><label>Flashcards totales</label><input type="number" id="admin-r-cards" min="0" /></div>
-              <div class="admin-control"><label>Tests totaux</label><input type="number" id="admin-r-tests" min="0" /></div>
-              <div class="admin-control"><label>Quiz totaux</label><input type="number" id="admin-r-quizzes" min="0" /></div>
-              <div class="admin-control"><label>Lecture totale</label><input type="number" id="admin-r-reading" min="0" /></div>
-              <div class="admin-control"><label>Taux de réussite</label><input type="number" id="admin-r-rate" min="0" max="100" /></div>
+            <div class="admin-control">
+              <label>Jokers de streak communs</label>
+              <input type="number" id="admin-streak-jokers" min="0" />
             </div>
           </div>
+          <p class="small-note">Seul `R` peut ajuster cette réserve commune utilisée pour sauver la streak.</p>
+          <div class="admin-action-feedback hidden" id="admin-action-feedback"></div>
           <div class="admin-actions">
             <button class="primary-button" id="save-admin-settings">Appliquer</button>
-            <button class="secondary-button" id="reset-admin-overrides">Réinitialiser</button>
           </div>
         </div>
       </section>
@@ -518,9 +493,10 @@
   <nav class="tabbar bottom-nav" aria-label="Navigation principale">
     <button class="tab-button active" data-nav="home" aria-label="Accueil"><img class="tab-icon" src="images/nav-home.svg" alt="Accueil" /><span class="visually-hidden">Accueil</span></button>
     <button class="tab-button" data-nav="profile" aria-label="Profil"><img class="tab-icon" src="images/nav-profile.svg" alt="Profil" /><span class="visually-hidden">Profil</span></button>
-    <button class="tab-button" data-nav="chapter" aria-label="Chapitres"><img class="tab-icon" src="images/nav-chapter.svg" alt="Chapitres" /><span class="visually-hidden">Chapitres</span></button>
+    <button class="tab-button" data-nav="chapters" aria-label="Chapitres"><img class="tab-icon" src="images/nav-chapter.svg" alt="Chapitres" /><span class="visually-hidden">Chapitres</span></button>
+    <button class="tab-button" data-nav="settings" aria-label="Paramètres"><span class="tab-emoji" aria-hidden="true">⚙</span><span class="visually-hidden">Paramètres</span></button>
   </nav>
 
-  <script src="app.js?v=20260710"></script>
+  <script src="app.js?v=20260829"></script>
 </body>
 </html>

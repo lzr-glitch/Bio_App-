@@ -1,6 +1,6 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
 const LEGACY_SYNC_ENDPOINT = 'https://lzr-glitch.github.io/Bio_App-/';
-const DEFAULT_SYNC_ENDPOINT = 'https://bio-app-sync-default-rtdb.europe-west1.firebasedatabase.app/bio-app/state.json';
+const DEFAULT_SYNC_ENDPOINT = '';
 const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
@@ -22,6 +22,7 @@ const defaultState = {
   lastMonth: getDayKeyFor().slice(0, 7),
   jokers: 0,
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
+  deleted: { flashcards: {}, questionBank: {} },
   users: {
     G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] },
     R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] }
@@ -90,8 +91,7 @@ const workHistoryList = document.getElementById('work-history-list');
 const saveCardBtn = document.getElementById('save-card');
 const clearCardBtn = document.getElementById('clear-card');
 const cardQuestion = document.getElementById('card-question');
-const cardAnswersEditor = document.getElementById('card-answers-editor');
-const addCardAnswerButton = document.getElementById('add-card-answer');
+const cardAnswer = document.getElementById('card-answer');
 const cardTags = document.getElementById('card-tags');
 const cardExplanation = document.getElementById('card-explanation');
 const cardNote = document.getElementById('card-note');
@@ -111,6 +111,7 @@ const showAnswer = document.getElementById('show-answer');
 const easyBtn = document.getElementById('easy-btn');
 const mediumBtn = document.getElementById('medium-btn');
 const hardBtn = document.getElementById('hard-btn');
+const notMasteredBtn = document.getElementById('not-mastered-btn');
 const reviewSummary = document.getElementById('review-summary');
 const reviewResults = document.getElementById('review-results');
 const finishReview = document.getElementById('finish-review');
@@ -128,9 +129,6 @@ const quizProgressLabel = document.getElementById('quiz-progress-label');
 const startQuiz = document.getElementById('start-quiz');
 const quizMeta = document.getElementById('quiz-meta');
 const adminPanel = document.getElementById('admin-panel');
-const adminResetHour = document.getElementById('admin-reset-hour');
-const adminAddFlashcardOther = document.getElementById('admin-add-flashcard-other');
-const adminAddTestOther = document.getElementById('admin-add-test-other');
 const adminActionFeedback = document.getElementById('admin-action-feedback');
 const flashcardTargetHint = document.getElementById('flashcard-target-hint');
 const quizQuestion = document.getElementById('quiz-question');
@@ -143,6 +141,7 @@ const finishQuiz = document.getElementById('finish-quiz');
 const quizCreateChapter = document.getElementById('quiz-create-chapter');
 const quizCreateTheme = document.getElementById('quiz-create-theme');
 const quizCreateQuestion = document.getElementById('quiz-create-question');
+const quizCreateExplanation = document.getElementById('quiz-create-explanation');
 const quizCreateOptionsList = document.getElementById('quiz-create-options-list');
 const quizCreateAddOption = document.getElementById('quiz-create-add-option');
 const quizCreateSave = document.getElementById('quiz-create-save');
@@ -202,24 +201,8 @@ const viewMyStats = document.getElementById('view-my-stats');
 const viewMyBadges = document.getElementById('view-my-badges');
 const viewOtherStats = document.getElementById('view-other-stats');
 const viewOtherBadges = document.getElementById('view-other-badges');
-const adminStreak = document.getElementById('admin-streak');
-const adminJokersG = document.getElementById('admin-jokers-g');
-const adminJokersR = document.getElementById('admin-jokers-r');
-const adminTargetReading = document.getElementById('admin-target-reading');
-const adminTargetCards = document.getElementById('admin-target-cards');
-const adminTargetTested = document.getElementById('admin-target-tested');
-const adminGcards = document.getElementById('admin-g-cards');
-const adminGtests = document.getElementById('admin-g-tests');
-const adminGquizzes = document.getElementById('admin-g-quizzes');
-const adminGreading = document.getElementById('admin-g-reading');
-const adminGrate = document.getElementById('admin-g-rate');
-const adminRcards = document.getElementById('admin-r-cards');
-const adminRtests = document.getElementById('admin-r-tests');
-const adminRquizzes = document.getElementById('admin-r-quizzes');
-const adminRreading = document.getElementById('admin-r-reading');
-const adminRate = document.getElementById('admin-r-rate');
+const adminStreakJokers = document.getElementById('admin-streak-jokers');
 const saveAdminSettings = document.getElementById('save-admin-settings');
-const resetAdminOverrides = document.getElementById('reset-admin-overrides');
 
 let timerInterval = null;
 let timerSeconds = 0;
@@ -230,9 +213,10 @@ let isWorkTimerRunning = false;
 let currentWorkSession = null;
 let reviewQueue = [];
 let adminFeedbackTimeout = null;
-let adminFlashcardTarget = null;
 let reviewIndex = 0;
 let reviewCorrect = 0;
+let reviewRevealMode = false;
+let reviewSessionMode = 'review';
 let quizState = null;
 let monthlyState = null;
 let currentLibraryGroup = null;
@@ -243,6 +227,10 @@ let syncPollInterval = null;
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
+  return parseState(raw);
+}
+
+function parseState(raw) {
   if (!raw) return JSON.parse(JSON.stringify(defaultState));
   try {
     const parsed = JSON.parse(raw);
@@ -279,10 +267,22 @@ function saveState(options = {}) {
   if (!options.skipTouch) {
     touchSyncMeta();
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('saveState: localStorage.setItem failed', e);
+  }
   if (!options.skipSync) {
+    console.debug('saveState: scheduling sync');
     scheduleSync();
   }
+}
+
+function replaceState(nextState) {
+  Object.keys(state).forEach(key => {
+    delete state[key];
+  });
+  Object.assign(state, nextState);
 }
 
 function setText(element, value) {
@@ -315,6 +315,21 @@ function getSyncHeaders() {
   return headers;
 }
 
+function getDeletedMap(type) {
+  if (!state.deleted || typeof state.deleted !== 'object') {
+    state.deleted = { flashcards: {}, questionBank: {} };
+  }
+  if (!state.deleted[type] || typeof state.deleted[type] !== 'object') {
+    state.deleted[type] = {};
+  }
+  return state.deleted[type];
+}
+
+function markDeleted(type, id) {
+  if (!id) return;
+  getDeletedMap(type)[id] = Date.now();
+}
+
 function buildSyncDocument() {
   return {
     version: 1,
@@ -328,6 +343,7 @@ function buildSyncDocument() {
         G: JSON.parse(JSON.stringify(getUser('G'))),
         R: JSON.parse(JSON.stringify(getUser('R')))
       },
+      deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {} })),
       questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
       streak: state.streak,
       pending: state.pending,
@@ -354,8 +370,12 @@ function sanitizeSyncDoc(doc) {
     },
     data: {
       users: {
-        G: doc.data?.users?.G || JSON.parse(JSON.stringify(defaultState.users.G)),
-        R: doc.data?.users?.R || JSON.parse(JSON.stringify(defaultState.users.R))
+        G: deepMerge(JSON.parse(JSON.stringify(defaultState.users.G)), doc.data?.users?.G || {}),
+        R: deepMerge(JSON.parse(JSON.stringify(defaultState.users.R)), doc.data?.users?.R || {})
+      },
+      deleted: {
+        flashcards: doc.data?.deleted?.flashcards || {},
+        questionBank: doc.data?.deleted?.questionBank || {}
       },
       questionBank: Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : [],
       streak: Number(doc.data?.streak) || 0,
@@ -370,10 +390,19 @@ function sanitizeSyncDoc(doc) {
   return safe;
 }
 
-function mergeQuestionBank(localQuestions, remoteQuestions) {
+function mergeDeletedMaps(localMap = {}, remoteMap = {}) {
+  const merged = { ...(localMap || {}) };
+  Object.keys(remoteMap || {}).forEach(id => {
+    merged[id] = Math.max(Number(merged[id]) || 0, Number(remoteMap[id]) || 0);
+  });
+  return merged;
+}
+
+function mergeQuestionBank(localQuestions, remoteQuestions, deletedMap = {}) {
   const merged = new Map();
   [...remoteQuestions, ...localQuestions].forEach(question => {
     if (!question?.id) return;
+    if (deletedMap[question.id]) return;
     const existing = merged.get(question.id);
     if (!existing) {
       merged.set(question.id, question);
@@ -386,6 +415,136 @@ function mergeQuestionBank(localQuestions, remoteQuestions) {
   return [...merged.values()];
 }
 
+function mergeById(localItems = [], remoteItems = [], deletedMap = {}) {
+  const merged = new Map();
+  [...localItems, ...remoteItems].forEach(item => {
+    if (!item) return;
+    const key = item.id || `${item.date || ''}-${item.questionId || item.question || item.score || JSON.stringify(item)}`;
+    if (item.id && deletedMap[item.id]) return;
+    const previous = merged.get(key);
+    if (!previous) {
+      merged.set(key, item);
+      return;
+    }
+    const previousTime = new Date(previous.updatedAt || previous.createdAt || previous.date || 0).getTime() || 0;
+    const itemTime = new Date(item.updatedAt || item.createdAt || item.date || 0).getTime() || 0;
+    merged.set(key, itemTime >= previousTime ? { ...previous, ...item } : { ...item, ...previous });
+  });
+  return [...merged.values()];
+}
+
+function mergeNumericMaps(localMap = {}, remoteMap = {}) {
+  const merged = { ...localMap };
+  Object.keys(remoteMap || {}).forEach(key => {
+    merged[key] = Math.max(Number(merged[key]) || 0, Number(remoteMap[key]) || 0);
+  });
+  return merged;
+}
+
+function mergeDailyMaps(localDaily = {}, remoteDaily = {}) {
+  const merged = { ...localDaily };
+  Object.keys(remoteDaily || {}).forEach(day => {
+    const local = merged[day] || {};
+    const remote = remoteDaily[day] || {};
+    merged[day] = {
+      ...local,
+      ...remote,
+      reading: Math.max(Number(local.reading) || 0, Number(remote.reading) || 0),
+      cards: Math.max(Number(local.cards) || 0, Number(remote.cards) || 0),
+      tested: Math.max(Number(local.tested) || 0, Number(remote.tested) || 0),
+      complete: Boolean(local.complete || remote.complete)
+    };
+  });
+  return merged;
+}
+
+function mergeUsers(localUser, remoteUser, deleted = {}) {
+  const local = deepMerge(JSON.parse(JSON.stringify(defaultState.users[localUser?.name] || defaultState.users.G)), localUser || {});
+  const remote = deepMerge(JSON.parse(JSON.stringify(defaultState.users[remoteUser?.name] || defaultState.users.G)), remoteUser || {});
+  return {
+    ...local,
+    ...remote,
+    jokers: Math.max(Number(local.jokers) || 0, Number(remote.jokers) || 0),
+    chapters: { ...(local.chapters || {}), ...(remote.chapters || {}) },
+    reading: mergeNumericMaps(local.reading, remote.reading),
+    readingSeconds: mergeNumericMaps(local.readingSeconds, remote.readingSeconds),
+    daily: mergeDailyMaps(local.daily, remote.daily),
+    flashcards: mergeById(local.flashcards || [], remote.flashcards || [], deleted.flashcards || {}).map(normalizeFlashcard),
+    quizzes: mergeById(local.quizzes || [], remote.quizzes || []),
+    tests: mergeById(local.tests || [], remote.tests || []),
+    monthlyTests: mergeById(local.monthlyTests || [], remote.monthlyTests || []),
+    badges: [...new Set([...(local.badges || []), ...(remote.badges || [])])],
+    workHistory: mergeById(local.workHistory || [], remote.workHistory || []),
+    statsOverride: { ...(local.statsOverride || {}), ...(remote.statsOverride || {}) }
+  };
+}
+
+function normalizeFlashcard(card) {
+  if (!card || typeof card !== 'object') return card;
+  const answer = typeof card.answer === 'string' && card.answer.trim()
+    ? card.answer.trim()
+    : Array.isArray(card.answers) && card.answers.length
+      ? String(card.answers[Number.isInteger(card.correctAnswerIndex) ? card.correctAnswerIndex : 0] ?? card.answers[0] ?? '').trim()
+      : '';
+  return {
+    ...card,
+    answer,
+    mastery: ['non-maitrise', 'moyen-', 'moyen+', 'maitrise'].includes(card.mastery) ? card.mastery : 'non-maitrise',
+    seenBy: Array.isArray(card.seenBy) ? card.seenBy : []
+  };
+}
+
+function getFlashcardAnswerText(card) {
+  return normalizeFlashcard(card)?.answer || '';
+}
+
+function getFlashcardMastery(card) {
+  return normalizeFlashcard(card)?.mastery || 'non-maitrise';
+}
+
+function setFlashcardMastery(card, mastery) {
+  if (!card) return;
+  card.mastery = mastery;
+}
+
+function getFlashcardMasteryLabel(mastery) {
+  const labels = {
+    'non-maitrise': 'Non maîtrisé',
+    'moyen-': 'Moyen -',
+    'moyen+': 'Moyen +',
+    maitrise: 'Maîtrisé'
+  };
+  return labels[mastery] || 'Non maîtrisé';
+}
+
+function getFlashcardMasteryWeight(mastery) {
+  const weights = {
+    'non-maitrise': 50,
+    'moyen-': 30,
+    'moyen+': 15,
+    maitrise: 5
+  };
+  return weights[mastery] || 50;
+}
+
+function sampleWeightedFlashcards(cards, count) {
+  const remaining = cards.map(card => normalizeFlashcard(card)).filter(Boolean);
+  const selected = [];
+  const targetCount = Math.min(count, remaining.length);
+  while (selected.length < targetCount && remaining.length > 0) {
+    const totalWeight = remaining.reduce((sum, card) => sum + getFlashcardMasteryWeight(getFlashcardMastery(card)), 0);
+    let cursor = Math.random() * totalWeight;
+    let index = 0;
+    for (; index < remaining.length; index += 1) {
+      cursor -= getFlashcardMasteryWeight(getFlashcardMastery(remaining[index]));
+      if (cursor <= 0) break;
+    }
+    const chosen = remaining.splice(Math.min(index, remaining.length - 1), 1)[0];
+    if (chosen) selected.push(chosen);
+  }
+  return selected;
+}
+
 function mergeSyncDocs(localDoc, remoteDoc) {
   if (!remoteDoc) return localDoc;
   const local = sanitizeSyncDoc(localDoc);
@@ -393,18 +552,19 @@ function mergeSyncDocs(localDoc, remoteDoc) {
   if (!local || !remote) return localDoc;
 
   const merged = JSON.parse(JSON.stringify(local));
+  const mergedDeleted = {
+    flashcards: mergeDeletedMaps(local.data.deleted?.flashcards, remote.data.deleted?.flashcards),
+    questionBank: mergeDeletedMaps(local.data.deleted?.questionBank, remote.data.deleted?.questionBank)
+  };
   ['G', 'R'].forEach(userId => {
     const localTs = local.meta.usersUpdatedAt[userId] || 0;
     const remoteTs = remote.meta.usersUpdatedAt[userId] || 0;
-    if (remoteTs > localTs) {
-      merged.data.users[userId] = remote.data.users[userId];
-      merged.meta.usersUpdatedAt[userId] = remoteTs;
-    } else {
-      merged.meta.usersUpdatedAt[userId] = localTs;
-    }
+    merged.data.users[userId] = mergeUsers(local.data.users[userId], remote.data.users[userId], mergedDeleted);
+    merged.meta.usersUpdatedAt[userId] = Math.max(localTs, remoteTs);
   });
 
-  merged.data.questionBank = mergeQuestionBank(local.data.questionBank, remote.data.questionBank);
+  merged.data.deleted = mergedDeleted;
+  merged.data.questionBank = mergeQuestionBank(local.data.questionBank, remote.data.questionBank, mergedDeleted.questionBank);
 
   if ((remote.meta.globalUpdatedAt || 0) > (local.meta.globalUpdatedAt || 0)) {
     merged.data.streak = remote.data.streak;
@@ -426,6 +586,7 @@ function applySyncDoc(doc) {
   if (!safe) return;
   state.users.G = safe.data.users.G;
   state.users.R = safe.data.users.R;
+  state.deleted = safe.data.deleted;
   state.questionBank = safe.data.questionBank;
   state.streak = safe.data.streak;
   state.pending = safe.data.pending;
@@ -440,14 +601,17 @@ function applySyncDoc(doc) {
 }
 
 async function pullRemoteDoc() {
+  console.debug('pullRemoteDoc: fetching', state.sync.endpoint);
   const response = await fetch(state.sync.endpoint, {
     method: 'GET',
     cache: 'no-store',
     headers: getSyncHeaders()
   });
+  console.debug('pullRemoteDoc: response status', response.status, response.statusText);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`GET ${response.status}`);
   const contentType = response.headers.get('content-type') || '';
+  console.debug('pullRemoteDoc: content-type', contentType);
   if (!contentType.includes('application/json')) {
     throw new Error('Endpoint sync invalide: réponse non JSON');
   }
@@ -458,12 +622,33 @@ async function pullRemoteDoc() {
 }
 
 async function pushRemoteDoc(doc) {
-  const response = await fetch(state.sync.endpoint, {
-    method: 'PUT',
-    headers: getSyncHeaders(),
-    body: JSON.stringify(doc)
-  });
-  if (!response.ok) throw new Error(`PUT ${response.status}`);
+  const maxAttempts = 3;
+  const body = JSON.stringify(doc);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      console.debug(`pushRemoteDoc: attempt ${attempt} to ${state.sync.endpoint}`);
+      const response = await fetch(state.sync.endpoint, {
+        method: 'PUT',
+        headers: getSyncHeaders(),
+        body
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        const errMsg = `PUT ${response.status} ${response.statusText} ${text}`;
+        console.warn('pushRemoteDoc failure:', errMsg);
+        if (attempt === maxAttempts) throw new Error(errMsg);
+        // wait a bit and retry
+        await new Promise(res => setTimeout(res, 300 * attempt));
+        continue;
+      }
+      console.debug(`pushRemoteDoc: success on attempt ${attempt}`);
+      return true;
+    } catch (err) {
+      console.warn(`pushRemoteDoc: network/exception on attempt ${attempt}:`, err);
+      if (attempt === maxAttempts) throw err;
+      await new Promise(res => setTimeout(res, 300 * attempt));
+    }
+  }
 }
 
 async function syncNow(showFeedback = false) {
@@ -480,10 +665,20 @@ async function syncNow(showFeedback = false) {
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
     const localDoc = buildSyncDocument();
+    console.debug('syncNow: localDoc.meta', localDoc.meta, 'localDoc.updatedAt', localDoc.updatedAt);
     const remoteDoc = await pullRemoteDoc();
+    console.debug('syncNow: remoteDoc.meta', remoteDoc?.meta, 'remoteDoc.updatedAt', remoteDoc?.updatedAt);
     const mergedDoc = mergeSyncDocs(localDoc, remoteDoc);
+    console.debug('syncNow: mergedDoc.meta', mergedDoc.meta, 'mergedDoc.updatedAt', mergedDoc.updatedAt);
     applySyncDoc(mergedDoc);
-    await pushRemoteDoc(mergedDoc);
+    try {
+      await pushRemoteDoc(mergedDoc);
+      console.debug('syncNow: pushRemoteDoc completed');
+    } catch (pushErr) {
+      console.error('syncNow: pushRemoteDoc failed after retries', pushErr);
+      // keep going: we already applied remote -> local merge; surface error
+      throw pushErr;
+    }
     state.syncMeta.lastSyncedAt = Date.now();
     saveState({ skipTouch: true, skipSync: true });
     try {
@@ -497,6 +692,10 @@ async function syncNow(showFeedback = false) {
     setSyncStatus(`Synchronisé (${timeLabel}).`);
     return true;
   } catch (error) {
+    if (String(error?.message || '').includes('401')) {
+      setSyncStatus('Erreur sync: accès refusé, vérifie l’URL ou le token.');
+      return false;
+    }
     setSyncStatus(`Erreur sync: ${error.message}`);
     return false;
   } finally {
@@ -507,6 +706,7 @@ async function syncNow(showFeedback = false) {
 function scheduleSync(delay = 1200) {
   if (!isSyncConfigured()) return;
   if (!navigator.onLine) return;
+  console.debug('scheduleSync: will run in', delay, 'ms');
   clearTimeout(syncDebounceTimeout);
   syncDebounceTimeout = setTimeout(() => {
     syncNow(false);
@@ -709,7 +909,37 @@ function getPastDate(daysAgo) {
 }
 
 function getUser(id) {
-  return state.users[id];
+  if (!state.users) state.users = {};
+  if (!state.users[id]) {
+    state.users[id] = {
+      name: id,
+      jokers: 0,
+      chapters: {},
+      flashcards: [],
+      quizzes: [],
+      reading: {},
+      readingSeconds: {},
+      tests: [],
+      daily: {},
+      monthlyTests: [],
+      badges: [],
+      statsOverride: {},
+      workHistory: []
+    };
+  }
+  const user = state.users[id];
+  if (!Array.isArray(user.flashcards)) user.flashcards = [];
+  if (!Array.isArray(user.quizzes)) user.quizzes = [];
+  if (!user.reading || typeof user.reading !== 'object') user.reading = {};
+  if (!user.readingSeconds || typeof user.readingSeconds !== 'object') user.readingSeconds = {};
+  if (!Array.isArray(user.tests)) user.tests = [];
+  if (!user.daily || typeof user.daily !== 'object') user.daily = {};
+  if (!Array.isArray(user.monthlyTests)) user.monthlyTests = [];
+  if (!Array.isArray(user.badges)) user.badges = [];
+  if (!user.statsOverride || typeof user.statsOverride !== 'object') user.statsOverride = {};
+  if (!Array.isArray(user.workHistory)) user.workHistory = [];
+  if (!user.chapters || typeof user.chapters !== 'object') user.chapters = {};
+  return user;
 }
 
 function getOtherUserId() {
@@ -718,7 +948,7 @@ function getOtherUserId() {
 
 function canDeleteFlashcard(card) {
   if (!card) return false;
-  return state.currentUser === 'R' || card.user === state.currentUser;
+  return card.user === state.currentUser;
 }
 
 function canEditFlashcard(card) {
@@ -727,7 +957,6 @@ function canEditFlashcard(card) {
 
 function canDeleteQuizQuestion(question) {
   if (!question) return false;
-  if (state.currentUser === 'R') return true;
   if (question.createdBy) return question.createdBy === state.currentUser;
   return question.source === 'Annales';
 }
@@ -837,7 +1066,10 @@ function goToPage(page, preserveTarget = false) {
   if (page === 'settings') renderSettings();
   if (page === 'work') renderWorkHistory();
   if (page === 'quiz') renderQuizStatus();
-  if (page === 'quiz-create') renderQuizStatus();
+  if (page === 'quiz-create') {
+    ensureQuizCreateOptions();
+    renderQuizStatus();
+  }
   if (page === 'test') populateTagFilter();
   if (page === 'library' || page === 'flashcards') {
     markOtherCardsSeen();
@@ -862,13 +1094,7 @@ function applyPageTheme(page) {
 }
 
 function markOtherCardsSeen() {
-  const other = getUser(getOtherUserId());
-  const flashcards = Array.isArray(other.flashcards) ? other.flashcards : [];
-  flashcards.forEach(card => {
-    if (!card.seenBy) card.seenBy = [];
-    if (!card.seenBy.includes(state.currentUser)) card.seenBy.push(state.currentUser);
-  });
-  saveState();
+  return false;
 }
 
 function renderApp() {
@@ -986,75 +1212,23 @@ function deleteReadingEntry(dayKey) {
 }
 
 function getFlashcardAnswers(card) {
-  if (Array.isArray(card.answers) && card.answers.length > 0) {
-    return card.answers.map(answer => String(answer ?? '').trim()).filter(Boolean);
-  }
-  return String(card.answer || '')
-    .split('\n')
-    .map(answer => answer.trim())
-    .filter(Boolean);
+  const answer = getFlashcardAnswerText(card);
+  return answer ? [answer] : [];
 }
 
 function getFlashcardCorrectIndex(card) {
-  const answers = getFlashcardAnswers(card);
-  if (answers.length === 0) return 0;
-  if (Number.isInteger(card.correctAnswerIndex) && card.correctAnswerIndex >= 0 && card.correctAnswerIndex < answers.length) {
-    return card.correctAnswerIndex;
-  }
-  if (card.answer) {
-    const index = answers.findIndex(answer => answer === card.answer);
-    if (index >= 0) return index;
-  }
   return 0;
 }
 
 function renderFlashcardAnswers(card) {
-  const answers = getFlashcardAnswers(card);
-  const correctIndex = getFlashcardCorrectIndex(card);
-  if (answers.length === 0) return '<div class="flashcard-answers-list"><div class="flashcard-answer correct">Aucune réponse</div></div>';
-  return `<div class="flashcard-answers-list">
-    ${answers.map((answer, index) => `<div class="flashcard-answer ${index === correctIndex ? 'correct' : ''}">${escapeHtml(answer)}</div>`).join('')}
-  </div>`;
-}
-
-function addAnswerInput(value = '', checked = false) {
-  if (!cardAnswersEditor) return;
-  const index = cardAnswersEditor.querySelectorAll('.answer-editor-row').length + 1;
-  const row = document.createElement('div');
-  row.className = 'answer-editor-row';
-  row.innerHTML = `<input type="radio" name="card-correct-answer" ${checked ? 'checked' : ''} aria-label="Réponse correcte" />
-    <input type="text" class="card-answer-input" placeholder="Réponse ${index}" value="${escapeHtml(value)}" />
-    <button type="button" class="icon-mini-button" data-action="remove-answer" title="Supprimer cette réponse">×</button>`;
-  cardAnswersEditor.appendChild(row);
-}
-
-function resetAnswerInputs(values = ['', ''], correctIndex = 0) {
-  if (!cardAnswersEditor) return;
-  cardAnswersEditor.innerHTML = '';
-  const safeValues = values.length >= 2 ? values : [...values, ...Array(2 - values.length).fill('')];
-  safeValues.forEach((value, index) => addAnswerInput(value, index === correctIndex));
-}
-
-function getAnswerFormData() {
-  const rows = Array.from(cardAnswersEditor?.querySelectorAll('.answer-editor-row') || []);
-  const answers = [];
-  let correctAnswerIndex = 0;
-  rows.forEach((row) => {
-    const input = row.querySelector('.card-answer-input');
-    const radio = row.querySelector('input[type="radio"]');
-    const value = input?.value.trim();
-    if (!value) return;
-    if (radio?.checked) correctAnswerIndex = answers.length;
-    answers.push(value);
-  });
-  if (correctAnswerIndex >= answers.length) correctAnswerIndex = 0;
-  return { answers, correctAnswerIndex };
+  const answer = getFlashcardAnswerText(card);
+  if (!answer) return '<div class="flashcard-answers-list"><div class="flashcard-answer correct">Aucune réponse</div></div>';
+  return `<div class="flashcard-answers-list"><div class="flashcard-answer correct">${escapeHtml(answer)}</div></div>`;
 }
 
 function fillFlashcardForm(card) {
   cardQuestion.value = card.question || '';
-  const answers = getFlashcardAnswers(card);
-  resetAnswerInputs(answers.length ? answers : [''], getFlashcardCorrectIndex(card));
+  if (cardAnswer) cardAnswer.value = getFlashcardAnswerText(card);
   cardTags.value = (card.tags || []).join(', ');
   cardExplanation.value = card.explanation || '';
   cardNote.value = card.note || '';
@@ -1089,7 +1263,7 @@ function updateFlashcard(cardId, data) {
     alert('Tu ne peux pas modifier cette flashcard.');
     return false;
   }
-  Object.assign(result.card, data);
+  Object.assign(result.card, data, { updatedAt: new Date().toISOString() });
   saveState();
   editingFlashcardId = null;
   resetFlashcardForm();
@@ -1102,12 +1276,6 @@ function renderFlashcards() {
   const user = getUser(state.currentUser);
   const today = getDaily(user);
   todayCardsList.innerHTML = '';
-  // If we're in the special 'view other unseen' mode, render the viewer instead
-  if (state.viewingOtherUnseen) {
-    renderOtherUnseenCard();
-    return;
-  }
-
   const cards = Array.isArray(user.flashcards) ? user.flashcards.filter(card => card.date === getToday()) : [];
   if (cards.length === 0) {
     todayCardsList.innerHTML = '<div class="history-item"><span>Aucune carte créée aujourd’hui</span></div>';
@@ -1119,16 +1287,14 @@ function renderFlashcards() {
     const editButton = canEditFlashcard(card) ? `<button type="button" class="secondary-button delete-inline-button" data-action="edit-flashcard" data-card-id="${card.id}">Modifier</button>` : '';
     const deleteButton = canDeleteFlashcard(card) ? `<button type="button" class="danger-button delete-inline-button" data-action="delete-flashcard" data-card-id="${card.id}">Supprimer</button>` : '';
     item.innerHTML = `<span>${escapeHtml(card.question)}</span>
-      <strong>${escapeHtml(card.tags.join(', '))}</strong>
+      <strong>${escapeHtml((card.tags || []).join(', '))}</strong>
+      <div class="flashcard-category-pill">${escapeHtml(getFlashcardMasteryLabel(getFlashcardMastery(card)))}</div>
       ${renderFlashcardAnswers(card)}
       ${editButton}
       ${deleteButton}`;
     todayCardsList.appendChild(item);
   });
 }
-
-let otherUnseenQueue = [];
-let otherUnseenIndex = 0;
 
 function startViewingOtherUnseen() {
   const other = getUser(getOtherUserId());
@@ -1137,53 +1303,12 @@ function startViewingOtherUnseen() {
     alert("Aucune carte non vue de l'autre.");
     return;
   }
-  otherUnseenQueue = unseen.slice();
-  otherUnseenIndex = 0;
-  state.viewingOtherUnseen = true;
-  // show review area
-  reviewCard.classList.remove('hidden');
-  reviewSummary.classList.add('hidden');
-  // hide standard review buttons
-  showAnswer.classList.add('hidden');
-  easyBtn.classList.add('hidden');
-  mediumBtn.classList.add('hidden');
-  hardBtn.classList.add('hidden');
-  goToPage('flashcards');
-  renderOtherUnseenCard();
-}
-
-function renderOtherUnseenCard() {
-  if (!state.viewingOtherUnseen) return;
-  if (otherUnseenIndex >= otherUnseenQueue.length) {
-    state.viewingOtherUnseen = false;
-    otherUnseenQueue = [];
-    otherUnseenIndex = 0;
-    reviewCard.classList.add('hidden');
-    renderApp();
-    return;
-  }
-  const card = otherUnseenQueue[otherUnseenIndex];
-  reviewProgress.textContent = `Carte ${otherUnseenIndex + 1} / ${otherUnseenQueue.length}`;
-  reviewQuestion.textContent = card.question;
-  // Render answers with the correct one highlighted and explanation visible
-  const answers = getFlashcardAnswers(card);
-  const correctIndex = getFlashcardCorrectIndex(card);
-  reviewAnswer.innerHTML = `<div class="flashcard-answers-list">
-    ${answers.map((a, i) => `<div class="flashcard-answer-button ${i === correctIndex ? 'correct' : 'muted'}">${escapeHtml(a)}</div>`).join('')}
-  </div>
-  <div class="flashcard-explanation">${escapeHtml(card.explanation || '')}</div>`;
-  reviewAnswer.classList.remove('hidden');
-  // mark as seen
-  if (!card.seenBy) card.seenBy = [];
-  if (!card.seenBy.includes(state.currentUser)) {
-    card.seenBy.push(state.currentUser);
-  }
-  saveState();
-  otherUnseenIndex += 1;
+  startFlashcardReview(unseen, 'other-unseen');
+  goToPage('test');
 }
 
 function getFlashcardSearchValues(card) {
-  return [card.question, card.answer, card.explanation, ...(card.tags || []), ...getFlashcardAnswers(card)];
+  return [card.question, getFlashcardAnswerText(card), card.explanation, ...(card.tags || [])];
 }
 
 function renderLibrary() {
@@ -1452,10 +1577,6 @@ function renderSettings() {
   if (syncEnabledInput) syncEnabledInput.checked = Boolean(state.sync?.enabled);
   if (syncEndpointInput) syncEndpointInput.value = state.sync?.endpoint || '';
   if (syncTokenInput) syncTokenInput.value = state.sync?.token || '';
-  if (syncAdvanced) {
-    const canHide = (state.sync?.endpoint || '') === DEFAULT_SYNC_ENDPOINT && !state.sync?.token;
-    syncAdvanced.classList.toggle('hidden', canHide);
-  }
   if (syncStatus) {
     if (!state.sync?.enabled) {
       setSyncStatus('Sync désactivée.');
@@ -1485,57 +1606,32 @@ function getProfileDisplayStats(user) {
       totalReading: 0
     };
   }
-  const override = user.statsOverride || {};
   const baseStats = computeStats(user);
   const readings = user.reading && typeof user.reading === 'object' ? user.reading : {};
   const flashcards = Array.isArray(user.flashcards) ? user.flashcards : [];
   const tests = Array.isArray(user.tests) ? user.tests : [];
   const quizzes = Array.isArray(user.quizzes) ? user.quizzes : [];
-  const totalReading = override.totalReading != null ? override.totalReading : Object.values(readings || {}).reduce((sum, v) => sum + Number(v || 0), 0);
+  const totalReading = Object.values(readings || {}).reduce((sum, v) => sum + Number(v || 0), 0);
   return {
-    totalCards: override.totalCards != null ? override.totalCards : flashcards.length,
-    weekCards: override.weekCards != null ? override.weekCards : baseStats.weekCards,
-    totalTests: override.totalTests != null ? override.totalTests : tests.length,
-    totalQuizzes: override.totalQuizzes != null ? override.totalQuizzes : quizzes.length,
-    successRate: override.successRate != null ? override.successRate : baseStats.successRate,
+    totalCards: flashcards.length,
+    weekCards: baseStats.weekCards,
+    totalTests: tests.length,
+    totalQuizzes: quizzes.length,
+    successRate: baseStats.successRate,
     totalReading
   };
 }
 
 function populateAdminInputs() {
-  const g = getUser('G');
-  const r = getUser('R');
-  adminStreak.value = state.streak;
-  adminJokersG.value = g.jokers;
-  adminJokersR.value = r.jokers;
-  adminTargetReading.value = state.dailyThresholds.reading;
-  adminTargetCards.value = state.dailyThresholds.cards;
-  adminTargetTested.value = state.dailyThresholds.tested;
-  adminResetHour.value = state.dayResetHour ?? 4;
-  adminGcards.value = g.statsOverride.totalCards ?? '';
-  adminGtests.value = g.statsOverride.totalTests ?? '';
-  adminGquizzes.value = g.statsOverride.totalQuizzes ?? '';
-  adminGreading.value = g.statsOverride.totalReading ?? '';
-  adminGrate.value = g.statsOverride.successRate ?? '';
-  adminRcards.value = r.statsOverride.totalCards ?? '';
-  adminRtests.value = r.statsOverride.totalTests ?? '';
-  adminRquizzes.value = r.statsOverride.totalQuizzes ?? '';
-  adminRreading.value = r.statsOverride.totalReading ?? '';
-  adminRate.value = r.statsOverride.successRate ?? '';
+  if (adminStreakJokers) adminStreakJokers.value = state.jokers;
 }
 
 function saveAdminChanges() {
-  state.streak = Number(adminStreak.value) || 0;
-  getUser('G').jokers = Number(adminJokersG.value) || 0;
-  getUser('R').jokers = Number(adminJokersR.value) || 0;
-  state.dailyThresholds.reading = Number(adminTargetReading.value) || 0;
-  state.dailyThresholds.cards = Number(adminTargetCards.value) || 0;
-  state.dailyThresholds.tested = Number(adminTargetTested.value) || 0;
-  state.dayResetHour = Number(adminResetHour.value);
-  setUserOverrides('G', adminGcards, adminGtests, adminGquizzes, adminGreading, adminGrate);
-  setUserOverrides('R', adminRcards, adminRtests, adminRquizzes, adminRreading, adminRate);
+  if (state.currentUser !== 'R') return;
+  state.jokers = Math.max(0, Number(adminStreakJokers?.value) || 0);
   saveState();
   renderApp();
+  showAdminFeedback(`Jokers de streak mis à jour : ${state.jokers}`);
 }
 
 function showAdminFeedback(message) {
@@ -1546,55 +1642,6 @@ function showAdminFeedback(message) {
   adminFeedbackTimeout = setTimeout(() => {
     adminActionFeedback.classList.add('hidden');
   }, 2500);
-}
-
-function setAdminFlashcardHint() {
-  if (!flashcardTargetHint) return;
-  if (adminFlashcardTarget) {
-    flashcardTargetHint.textContent = `Cette carte sera créée pour ${adminFlashcardTarget}.`;
-    flashcardTargetHint.classList.remove('hidden');
-  } else {
-    flashcardTargetHint.classList.add('hidden');
-  }
-}
-
-function startAdminFlashcardForOther() {
-  adminFlashcardTarget = getOtherUserId();
-  resetFlashcardForm();
-  setAdminFlashcardHint();
-  renderFlashcards();
-  goToPage('flashcards');
-}
-
-function createAdminTestForOther() {
-  const otherId = getOtherUserId();
-  const otherUser = getUser(otherId);
-  otherUser.tests.push({ date: getToday(), count: 1, correct: 1, score: 100 });
-  const daily = getDaily(otherUser);
-  daily.tested = otherUser.tests.filter(test => test.date === getToday()).length;
-  tryCompleteDay(otherUser);
-  saveState();
-  renderApp();
-  showAdminFeedback(`Test ajouté pour ${otherId}. Total tests : ${otherUser.tests.length}`);
-}
-
-function setUserOverrides(userId, cardsInput, testsInput, quizzesInput, readingInput, rateInput) {
-  const user = getUser(userId);
-  user.statsOverride = {
-    totalCards: cardsInput.value ? Number(cardsInput.value) : null,
-    totalTests: testsInput.value ? Number(testsInput.value) : null,
-    totalQuizzes: quizzesInput.value ? Number(quizzesInput.value) : null,
-    totalReading: readingInput.value ? Number(readingInput.value) : null,
-    successRate: rateInput.value ? Number(rateInput.value) : null
-  };
-}
-
-function resetAdminOverridesToDefault() {
-  getUser('G').statsOverride = {};
-  getUser('R').statsOverride = {};
-  populateAdminInputs();
-  saveState();
-  renderApp();
 }
 
 function showProfileStats(userKey) {
@@ -1776,15 +1823,67 @@ function setStatsTargetHint(leftUser, rightUser) {
 }
 
 function renderChapters() {
-  const chapters = ['Photosynthèse', 'Génétique', 'Cellule', 'Écologie', 'Évolution'];
+  const chapters = getTrackedChapters();
   chapterProgress.innerHTML = '';
+  if (chapters.length === 0) {
+    chapterProgress.innerHTML = '<div class="chapter-item"><span>Aucun chapitre suivi pour l’instant</span><strong>Ajoute des cartes ou des quiz</strong></div>';
+    return;
+  }
   chapters.forEach(name => {
-    const progress = Math.floor(Math.random() * 65) + 20;
+    const progress = computeChapterProgress(name);
     const item = document.createElement('div');
     item.className = 'chapter-item';
-    item.innerHTML = `<span>${name}</span><strong>${progress}% maîtrisé</strong>`;
+    item.innerHTML = `<span>${escapeHtml(name)}</span><strong>${progress}% de progression</strong>`;
     chapterProgress.appendChild(item);
   });
+}
+
+function getTrackedChapters() {
+  const chapters = new Set();
+  ['G', 'R'].forEach(userId => {
+    const user = getUser(userId);
+    (user.flashcards || []).forEach(card => {
+      (card.tags || []).forEach(tag => {
+        if (tag) chapters.add(tag);
+      });
+    });
+    (user.quizzes || []).forEach(quiz => {
+      if (quiz.chapter) chapters.add(quiz.chapter);
+    });
+  });
+  (state.questionBank || []).forEach(question => {
+    if (question.chapter) chapters.add(question.chapter);
+  });
+  return [...chapters].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+}
+
+function computeChapterProgress(chapter) {
+  let totalCards = 0;
+  let masteredCards = 0;
+  let quizAttempts = 0;
+  let quizCorrect = 0;
+
+  ['G', 'R'].forEach(userId => {
+    const user = getUser(userId);
+    (user.flashcards || []).forEach(card => {
+      if (!(card.tags || []).includes(chapter)) return;
+      totalCards += 1;
+      const mastery = getFlashcardMastery(card);
+      if (mastery === 'maitrise') masteredCards += 1;
+      else if (mastery === 'moyen+') masteredCards += 0.75;
+      else if (mastery === 'moyen-') masteredCards += 0.4;
+    });
+    (user.quizzes || []).forEach(quiz => {
+      if (quiz.chapter !== chapter) return;
+      quizAttempts += 1;
+      if (quiz.correct) quizCorrect += 1;
+    });
+  });
+
+  const cardScore = totalCards ? Math.round((masteredCards / totalCards) * 100) : 0;
+  const quizScore = quizAttempts ? Math.round((quizCorrect / quizAttempts) * 100) : 0;
+  if (totalCards && quizAttempts) return Math.round((cardScore + quizScore) / 2);
+  return totalCards ? cardScore : quizScore;
 }
 
 function renderWeaknesses() {
@@ -1937,6 +2036,7 @@ function addReadingSeconds(seconds) {
   user.reading[getToday()] = daily.reading;
   tryCompleteDay(user);
   saveState();
+  if (isSyncConfigured() && navigator.onLine) syncNow(false);
   renderApp();
 }
 
@@ -1958,42 +2058,41 @@ function tryCompleteDay(user) {
 
 function addFlashcard() {
   const question = cardQuestion.value.trim();
-  const { answers, correctAnswerIndex } = getAnswerFormData();
-  const answer = answers[correctAnswerIndex] || '';
+  const answer = cardAnswer ? cardAnswer.value.trim() : '';
   const tags = cardTags.value.split(',').map(tag => tag.trim()).filter(Boolean);
   const explanation = cardExplanation.value.trim();
   const note = cardNote.value.trim();
-  if (!question || answers.length < 2 || !answer || tags.length === 0 || !explanation) {
-    alert('Remplis la question, au moins deux réponses, choisis la bonne réponse, ajoute un tag et une explication.');
+  if (!question || !answer || tags.length === 0 || !explanation) {
+    alert('Remplis la question, la réponse complète, ajoute un tag et une explication.');
     return;
   }
   const cardData = {
     question,
     answer,
-    answers,
-    correctAnswerIndex,
     tags,
     explanation,
-    note
+    note,
+    mastery: 'non-maitrise',
+    user: state.currentUser
   };
   if (editingFlashcardId) {
     updateFlashcard(editingFlashcardId, cardData);
     return;
   }
-  const targetUser = adminFlashcardTarget || state.currentUser;
   const creator = state.currentUser;
-  const user = getUser(targetUser);
+  const user = getUser(state.currentUser);
   const newCard = {
-    id: `${targetUser}-${Date.now()}`,
-    user: targetUser,
+    id: `${state.currentUser}-${Date.now()}`,
+    user: state.currentUser,
     date: getToday(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     question,
     answer,
-    answers,
-    correctAnswerIndex,
     tags,
     explanation,
     note,
+    mastery: 'non-maitrise',
     reviews: [],
     seenBy: [creator]
   };
@@ -2002,29 +2101,37 @@ function addFlashcard() {
   daily.cards = user.flashcards.filter(card => card.date === getToday()).length;
   tryCompleteDay(user);
   saveState();
+  if (isSyncConfigured() && navigator.onLine) syncNow(false);
   resetFlashcardForm();
-  adminFlashcardTarget = null;
-  setAdminFlashcardHint();
   renderApp();
 }
 
 function resetFlashcardForm() {
   editingFlashcardId = null;
   cardQuestion.value = '';
-  resetAnswerInputs();
+  if (cardAnswer) cardAnswer.value = '';
   cardTags.value = '';
   cardExplanation.value = '';
   cardNote.value = '';
   saveCardBtn.textContent = 'Enregistrer la carte';
+  if (flashcardTargetHint) flashcardTargetHint.classList.add('hidden');
 }
 
 function resetQuizCreateForm() {
   if (quizCreateChapter) quizCreateChapter.value = '';
   if (quizCreateTheme) quizCreateTheme.value = '';
   if (quizCreateQuestion) quizCreateQuestion.value = '';
-  // clear dynamic options
+  if (quizCreateExplanation) quizCreateExplanation.value = '';
   if (quizCreateOptionsList) {
     quizCreateOptionsList.innerHTML = '';
+    addQuizCreateOption();
+    addQuizCreateOption();
+  }
+}
+
+function ensureQuizCreateOptions() {
+  if (!quizCreateOptionsList) return;
+  if (quizCreateOptionsList.querySelectorAll('.quiz-create-option-row').length === 0) {
     addQuizCreateOption();
     addQuizCreateOption();
   }
@@ -2050,9 +2157,10 @@ function addQuizCreateOption(value = '', checked = false) {
 
 function createQuizQuestion() {
   if (!quizCreateQuestion || !quizCreateOptionsList) return;
-  const chapter = (quizCreateChapter?.value || '').trim() || 'IBO';
+  const chapter = (quizCreateChapter?.value || '').trim() || 'Quiz';
   const theme = (quizCreateTheme?.value || '').trim() || 'Création manuelle';
   const question = quizCreateQuestion.value.trim();
+  const explanation = (quizCreateExplanation?.value || '').trim();
   // collect options from rows
   const rows = Array.from(quizCreateOptionsList.querySelectorAll('.quiz-create-option-row'));
   const options = [];
@@ -2078,11 +2186,13 @@ function createQuizQuestion() {
     question,
     options,
     correctAnswers: correctIndices,
+    explanation,
     source: 'Manuel',
     createdBy: state.currentUser,
     createdAt: new Date().toISOString()
   });
   saveState();
+  if (isSyncConfigured() && navigator.onLine) syncNow(false);
   renderQuizStatus();
   resetQuizCreateForm();
   if (quizCreateStatus) {
@@ -2115,43 +2225,48 @@ function populateTagFilter() {
   });
 }
 
-function startReviewSession() {
-  const count = parseInt(reviewCount.value, 10);
-  const user = getUser(state.currentUser);
+function buildFlashcardReviewPool(options = {}) {
+  const { todayOnly = false, selectedTag = '', otherUnseenOnly = false } = options;
+  const current = getUser(state.currentUser);
   const other = getUser(getOtherUserId());
-  const todayOnly = document.getElementById('review-today-only')?.checked ?? false;
-  const selectedTag = document.getElementById('review-tag-filter')?.value ?? '';
-  
-  const newCards = user.flashcards.filter(card => card.date === getToday());
-  const otherNew = other.flashcards.filter(card => card.date === getToday());
-  const dueCards = user.flashcards.filter(card => shouldReview(card) && card.date !== getToday());
-  const otherDue = other.flashcards.filter(card => shouldReview(card) && card.date !== getToday());
-  
-  let combined;
-  if (todayOnly) {
-    combined = [...newCards, ...otherNew];
-  } else {
-    combined = [...newCards, ...otherNew, ...dueCards, ...otherDue];
-  }
-  
-  if (selectedTag && selectedTag !== '') {
-    combined = combined.filter(card => (card.tags || []).includes(selectedTag));
-  }
-  
-  reviewQueue = combined.slice(0, count);
+  const sourceCards = otherUnseenOnly
+    ? (other.flashcards || []).filter(card => !(card.seenBy || []).includes(state.currentUser))
+    : [...(current.flashcards || []), ...(other.flashcards || [])];
+  const filteredCards = sourceCards.filter(card => {
+    if (todayOnly && card.date !== getToday()) return false;
+    if (selectedTag && !(card.tags || []).includes(selectedTag)) return false;
+    return true;
+  });
+  return filteredCards.map(normalizeFlashcard).filter(Boolean);
+}
+
+function startFlashcardReview(cards, mode = 'review') {
+  const count = parseInt(reviewCount.value, 10) || 10;
+  reviewQueue = sampleWeightedFlashcards(cards, count);
   if (reviewQueue.length === 0) {
     alert('Aucune carte disponible pour ce test. Crée des flashcards d’abord.');
     return;
   }
   reviewIndex = 0;
   reviewCorrect = 0;
+  reviewRevealMode = false;
+  reviewSessionMode = mode;
+  state.viewingOtherUnseen = false;
   reviewCard.classList.remove('hidden');
   reviewSummary.classList.add('hidden');
+  reviewAnswer.classList.remove('hidden');
   showAnswer.classList.remove('hidden');
-  easyBtn.classList.add('hidden');
-  mediumBtn.classList.add('hidden');
-  hardBtn.classList.add('hidden');
+  showAnswer.disabled = false;
+  showAnswer.textContent = 'Voir la réponse';
+  [easyBtn, mediumBtn, hardBtn, notMasteredBtn].forEach(btn => btn?.classList.add('hidden'));
   renderReviewCard();
+}
+
+function startReviewSession() {
+  const todayOnly = document.getElementById('review-today-only')?.checked ?? false;
+  const selectedTag = document.getElementById('review-tag-filter')?.value ?? '';
+  const pool = buildFlashcardReviewPool({ todayOnly, selectedTag });
+  startFlashcardReview(pool, 'review');
 }
 
 function shouldReview(card) {
@@ -2170,89 +2285,59 @@ function renderReviewCard() {
     return;
   }
   const card = reviewQueue[reviewIndex];
-  const answers = getFlashcardAnswers(card);
-  const correctIndex = getFlashcardCorrectIndex(card);
-  
+  const answerText = getFlashcardAnswerText(card);
   reviewProgress.textContent = `Carte ${reviewIndex + 1} / ${reviewQueue.length}`;
   reviewQuestion.textContent = card.question;
-  
-  reviewAnswer.innerHTML = `<div class="flashcard-answers-list">
-    ${answers.map((answer, index) => 
-      `<button type="button" class="flashcard-answer-button" data-index="${index}">${escapeHtml(answer)}</button>`
-    ).join('')}
-  </div>`;
-  
+  reviewAnswer.innerHTML = reviewRevealMode
+    ? `<div class="flashcard-answer-reveal">
+        <div class="flashcard-answer-text">${escapeHtml(answerText || 'Aucune réponse renseignée.')}</div>
+        <div class="flashcard-explanation">${escapeHtml(card.explanation || 'Aucune explication fournie.')}</div>
+      </div>`
+    : '<div class="flashcard-answer-prompt">Clique sur Voir la réponse.</div>';
   reviewAnswer.classList.remove('hidden');
-  showAnswer.classList.add('hidden');
-  easyBtn.classList.add('hidden');
-  mediumBtn.classList.add('hidden');
-  hardBtn.classList.add('hidden');
-  
-  // Attach click handlers to answer buttons
-  document.querySelectorAll('.flashcard-answer-button').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const selectedIndex = parseInt(btn.dataset.index, 10);
-      gradeReviewAnswer(selectedIndex, correctIndex);
-    });
-  });
+  showAnswer.classList.toggle('hidden', reviewRevealMode);
+  [easyBtn, mediumBtn, hardBtn, notMasteredBtn].forEach(btn => btn?.classList.toggle('hidden', !reviewRevealMode));
+  if (easyBtn) easyBtn.textContent = 'Maîtrisé';
+  if (mediumBtn) mediumBtn.textContent = 'Moyen +';
+  if (hardBtn) hardBtn.textContent = 'Moyen -';
+  if (notMasteredBtn) notMasteredBtn.textContent = 'Non maîtrisé';
 }
 
-function gradeReviewAnswer(selectedIndex, correctIndex) {
-  const card = reviewQueue[reviewIndex];
-  const isCorrect = selectedIndex === correctIndex;
-  
-  if (!card.reviews) card.reviews = [];
-  card.reviews.push({ 
-    date: getToday(), 
-    difficulty: isCorrect ? 'easy' : 'hard',
-    result: isCorrect ? 'correct' : 'wrong' 
-  });
-  
-  if (isCorrect) {
-    reviewCorrect += 1;
-  }
-  
-  // If correct, advance immediately
-  if (isCorrect) {
-    reviewIndex += 1;
-    saveState();
-    renderReviewCard();
-    return;
-  }
+function revealReviewAnswer() {
+  reviewRevealMode = true;
+  renderReviewCard();
+}
 
-  // If wrong, show explanation and highlight correct answer; require user to click 'Suivant'
-  // disable buttons
-  document.querySelectorAll('.flashcard-answer-button').forEach((b) => b.disabled = true);
-  const buttons = Array.from(document.querySelectorAll('.flashcard-answer-button'));
-  buttons.forEach((b, idx) => {
-    if (idx === correctIndex) b.classList.add('correct');
-    if (idx === selectedIndex && idx !== correctIndex) b.classList.add('chosen-wrong');
+function gradeReviewAnswer(selectedMastery) {
+  const card = reviewQueue[reviewIndex];
+  const original = findFlashcardById(card.id)?.card || card;
+  if (!original.reviews) original.reviews = [];
+  original.reviews.push({
+    date: getToday(),
+    mastery: selectedMastery
   });
-  // show explanation and next button
-  const info = document.createElement('div');
-  info.className = 'flashcard-explanation';
-  info.innerHTML = `<p>${escapeHtml(card.explanation || 'Aucune explication fournie.')}</p>`;
-  const nextBtn = document.createElement('button');
-  nextBtn.type = 'button';
-  nextBtn.className = 'primary-button';
-  nextBtn.textContent = 'Suivant';
-  nextBtn.addEventListener('click', () => {
-    info.remove();
-    reviewIndex += 1;
-    saveState();
-    renderReviewCard();
-  });
-  info.appendChild(nextBtn);
-  reviewAnswer.parentNode.appendChild(info);
+  setFlashcardMastery(original, selectedMastery);
+  if (reviewSessionMode === 'other-unseen') {
+    if (!original.seenBy) original.seenBy = [];
+    if (!original.seenBy.includes(state.currentUser)) original.seenBy.push(state.currentUser);
+  }
+  Object.assign(card, normalizeFlashcard(original));
+  if (selectedMastery === 'maitrise') reviewCorrect += 1;
+  reviewIndex += 1;
+  reviewRevealMode = false;
+  saveState();
+  renderReviewCard();
 }
 
 function finishReviewSession() {
   reviewCard.classList.add('hidden');
   reviewSummary.classList.remove('hidden');
-  reviewResults.textContent = `Tu as répondu correctement à ${reviewCorrect} sur ${reviewQueue.length} cartes.`;
+  const mastered = reviewCorrect;
+  reviewResults.textContent = reviewSessionMode === 'other-unseen'
+    ? `Cartes vues: ${reviewQueue.length}.`
+    : `Tu as classé ${mastered} carte(s) comme maîtrisées sur ${reviewQueue.length}.`;
   const user = getUser(state.currentUser);
-  user.tests.push({ date: getToday(), count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100) });
+  user.tests.push({ date: getToday(), count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100), mode: reviewSessionMode });
   const daily = getDaily(user);
   daily.tested = user.tests.filter(test => test.date === getToday()).length;
   tryCompleteDay(user);
@@ -2321,11 +2406,15 @@ function selectQuizOption(button, option) {
 function renderQuizRunCard() {
   if (!quizState) return;
   const question = quizState.questions[quizState.index];
+  const correctIndices = Array.isArray(question.correctAnswers) && question.correctAnswers.length > 0
+    ? question.correctAnswers
+    : (question.answer ? [question.options.indexOf(question.answer)] : []);
+  const correctCount = Math.max(1, correctIndices.filter(index => index >= 0).length);
   quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length}`;
   quizQuestion.textContent = question.question;
+  const answerLabel = correctCount === 1 ? '1 bonne réponse' : `${correctCount} bonnes réponses`;
+  quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length} • ${answerLabel}`;
   quizOptions.innerHTML = '';
-  // determine multi-select
-  const correctIndices = Array.isArray(question.correctAnswers) ? question.correctAnswers : (question.answer ? [question.options.indexOf(question.answer)] : []);
   const multi = correctIndices.length > 1;
   question.options.forEach((option, idx) => {
     const btn = document.createElement('button');
@@ -2364,7 +2453,7 @@ function selectQuizOption(btn, idx, multi) {
 }
 
 function validateQuizAnswer() {
-  if (!quizState || (!quizState.selected || (quizState.selected instanceof Set && quizState.selected.size === 0))) {
+  if (!quizState || quizState.selected == null || (quizState.selected instanceof Set && quizState.selected.size === 0)) {
     alert('Choisis une réponse.');
     return;
   }
@@ -2397,6 +2486,7 @@ function validateQuizAnswer() {
 
   // incorrect -> show explanation and correct answers, require user to click 'Suivant'
   saveState();
+  validateQuiz.disabled = true;
   // highlight correct options
   Array.from(quizOptions.querySelectorAll('.option-button')).forEach(btn => {
     const idx = Number(btn.dataset.index);
@@ -2481,7 +2571,7 @@ function getVisibleQuizQuestions() {
   return state.questionBank.filter(question => {
     const owner = question.createdBy || '';
     const matchesScope = filterMode === 'all'
-      ? (state.currentUser === 'R' || owner === state.currentUser || !owner)
+      ? true
       : (owner === state.currentUser || (!owner && question.source === 'Annales'));
     if (!matchesScope) return false;
     if (!searchText) return true;
@@ -2525,8 +2615,10 @@ function deleteQuizQuestionById(questionId) {
     alert('Tu ne peux pas supprimer cette question.');
     return;
   }
+  markDeleted('questionBank', questionId);
   state.questionBank.splice(index, 1);
   saveState();
+  if (isSyncConfigured() && navigator.onLine) syncNow(false);
   renderQuizStatus();
 }
 
@@ -2542,17 +2634,13 @@ function deleteFlashcardById(cardId) {
     }
     const confirmed = confirm(`Supprimer la carte "${card.question}" ?`);
     if (!confirmed) return;
+    markDeleted('flashcards', cardId);
     user.flashcards.splice(index, 1);
     if (editingFlashcardId === cardId) resetFlashcardForm();
     const daily = getDaily(user);
     daily.cards = user.flashcards.filter(entry => entry.date === getToday()).length;
     saveState();
-    // Try to push deletion immediately to remote to avoid reappearing via sync
-    try {
-      if (isSyncConfigured() && navigator.onLine) syncNow(true);
-    } catch (e) {
-      // ignore
-    }
+    if (isSyncConfigured() && navigator.onLine) syncNow(false);
     renderApp();
     return;
   }
@@ -2574,34 +2662,76 @@ function renderMonthlyQuestion() {
     return;
   }
   const question = monthlyState.questions[monthlyState.index];
-  monthlyMeta.textContent = `${question.chapter} • ${question.theme}`;
+  const correctIndices = Array.isArray(question.correctAnswers) && question.correctAnswers.length > 0
+    ? question.correctAnswers
+    : (question.answer ? [question.options.indexOf(question.answer)] : []);
+  const answerLabel = Math.max(1, correctIndices.filter(index => index >= 0).length) === 1 ? '1 bonne réponse' : `${correctIndices.filter(index => index >= 0).length} bonnes réponses`;
+  monthlyMeta.textContent = `${question.chapter} • ${question.theme} • ${answerLabel}`;
   monthlyQuestion.textContent = question.question;
   monthlyOptions.innerHTML = '';
-  question.options.forEach(option => {
+  question.options.forEach((option, idx) => {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.dataset.index = String(idx);
     btn.textContent = option;
-    btn.addEventListener('click', () => selectMonthlyOption(btn, option));
+    btn.addEventListener('click', () => selectMonthlyOption(btn, idx, correctIndices.length > 1));
     monthlyOptions.appendChild(btn);
   });
 }
 
-function selectMonthlyOption(button, option) {
-  monthlyState.selected = option;
+function selectMonthlyOption(button, idx, multi) {
+  if (!monthlyState) return;
+  if (multi) {
+    if (!monthlyState.selected || !(monthlyState.selected instanceof Set)) monthlyState.selected = new Set();
+    if (monthlyState.selected.has(idx)) {
+      monthlyState.selected.delete(idx);
+      button.classList.remove('active');
+    } else {
+      monthlyState.selected.add(idx);
+      button.classList.add('active');
+    }
+    return;
+  }
+  monthlyState.selected = idx;
   Array.from(monthlyOptions.children).forEach(btn => btn.classList.toggle('active', btn === button));
 }
 
 function validateMonthlyAnswer() {
-  if (!monthlyState || !monthlyState.selected) return alert('Choisis une réponse.');
+  if (!monthlyState || monthlyState.selected == null || (monthlyState.selected instanceof Set && monthlyState.selected.size === 0)) return alert('Choisis une réponse.');
   const question = monthlyState.questions[monthlyState.index];
-  const correct = monthlyState.selected === question.answer;
+  const correctIndices = Array.isArray(question.correctAnswers) && question.correctAnswers.length > 0
+    ? question.correctAnswers
+    : (question.answer ? [question.options.indexOf(question.answer)] : []);
+  const selectedIndices = monthlyState.selected instanceof Set ? Array.from(monthlyState.selected) : [monthlyState.selected];
+  const normalizedSelected = selectedIndices.filter(index => index >= 0).sort((a, b) => a - b);
+  const normalizedCorrect = correctIndices.filter(index => index >= 0).sort((a, b) => a - b);
+  const correct = normalizedSelected.length === normalizedCorrect.length && normalizedSelected.every((value, index) => value === normalizedCorrect[index]);
   if (correct) monthlyState.correct += 1;
   Array.from(monthlyOptions.children).forEach(btn => {
-    btn.classList.toggle('correct', btn.textContent === question.answer);
-    if (btn.textContent === monthlyState.selected && btn.textContent !== question.answer) btn.classList.add('wrong');
+    const idx = Number(btn.dataset.index);
+    btn.classList.toggle('correct', normalizedCorrect.includes(idx));
+    if (normalizedSelected.includes(idx) && !normalizedCorrect.includes(idx)) btn.classList.add('wrong');
+    btn.disabled = true;
   });
+  if (!correct) {
+    const explanationDiv = document.createElement('div');
+    explanationDiv.className = 'quiz-explanation';
+    explanationDiv.innerHTML = `<p>${escapeHtml(question.explanation || 'Explication non fournie.')}</p>`;
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'primary-button';
+    nextBtn.textContent = 'Suivant';
+    nextBtn.addEventListener('click', () => {
+      explanationDiv.remove();
+      monthlyState.index += 1;
+      renderMonthlyQuestion();
+    });
+    explanationDiv.appendChild(nextBtn);
+    monthlyOptions.parentNode.appendChild(explanationDiv);
+    return;
+  }
   monthlyState.index += 1;
-  setTimeout(renderMonthlyQuestion, 300);
+  renderMonthlyQuestion();
 }
 
 function finishMonthlyTest() {
@@ -2664,10 +2794,6 @@ function resetAppData() {
   window.location.reload();
 }
 
-function revealAnswer() {
-  if (reviewAnswer) reviewAnswer.classList.remove('hidden');
-}
-
 function attachHandlers() {
   document.querySelectorAll('[data-user]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2694,30 +2820,7 @@ function attachHandlers() {
   importAnnalesInput.addEventListener('change', () => {
     if (importAnnalesInput.files.length) importAnnales();
   });
-  saveAdminSettings.addEventListener('click', saveAdminChanges);
-  resetAdminOverrides.addEventListener('click', resetAdminOverridesToDefault);
-  if (adminAddFlashcardOther) {
-    adminAddFlashcardOther.addEventListener('click', (event) => {
-      event.preventDefault();
-      startAdminFlashcardForOther();
-    });
-  }
-  if (adminAddTestOther) {
-    adminAddTestOther.addEventListener('click', (event) => {
-      event.preventDefault();
-      createAdminTestForOther();
-    });
-  }
-  if (adminPanel) {
-    adminPanel.addEventListener('click', (event) => {
-      const button = event.target.closest('button');
-      if (!button) return;
-      if (button.id === 'admin-add-test-other') {
-        event.preventDefault();
-        createAdminTestForOther();
-      }
-    });
-  }
+  if (saveAdminSettings) saveAdminSettings.addEventListener('click', saveAdminChanges);
   viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
   viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
   viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
@@ -2741,30 +2844,9 @@ function attachHandlers() {
   });
   saveCardBtn.addEventListener('click', addFlashcard);
   clearCardBtn.addEventListener('click', resetFlashcardForm);
-  if (addCardAnswerButton) addCardAnswerButton.addEventListener('click', (event) => {
-    event.preventDefault();
-    addAnswerInput();
-  });
   if (quizCreateAddOption) quizCreateAddOption.addEventListener('click', (event) => {
     event.preventDefault();
     addQuizCreateOption();
-  });
-  if (cardAnswersEditor) cardAnswersEditor.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-action="remove-answer"]');
-    if (!button) return;
-    event.preventDefault();
-    const rows = cardAnswersEditor.querySelectorAll('.answer-editor-row');
-    if (rows.length <= 2) {
-      alert('Garde au moins deux réponses.');
-      return;
-    }
-    const row = button.closest('.answer-editor-row');
-    const wasChecked = row.querySelector('input[type="radio"]')?.checked;
-    row.remove();
-    if (wasChecked) {
-      const firstRadio = cardAnswersEditor.querySelector('input[type="radio"]');
-      if (firstRadio) firstRadio.checked = true;
-    }
   });
   librarySearch.addEventListener('input', () => {
     currentLibraryGroup = null;
@@ -2811,7 +2893,27 @@ function attachHandlers() {
       if (quizCreateStatus) quizCreateStatus.textContent = '';
     });
   }
-  [quizCreateChapter, quizCreateTheme, quizCreateQuestion].forEach(input => {
+  if (showAnswer) showAnswer.addEventListener('click', (event) => {
+    event.preventDefault();
+    revealReviewAnswer();
+  });
+  if (easyBtn) easyBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    gradeReviewAnswer('maitrise');
+  });
+  if (mediumBtn) mediumBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    gradeReviewAnswer('moyen+');
+  });
+  if (hardBtn) hardBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    gradeReviewAnswer('moyen-');
+  });
+  if (notMasteredBtn) notMasteredBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    gradeReviewAnswer('non-maitrise');
+  });
+  [quizCreateChapter, quizCreateTheme, quizCreateQuestion, quizCreateExplanation].forEach(input => {
     if (!input) return;
     input.addEventListener('input', () => {
       if (quizCreateStatus) quizCreateStatus.textContent = '';
@@ -2863,10 +2965,6 @@ function attachHandlers() {
     saveWorkNote(false);
   });
   startReview.addEventListener('click', startReviewSession);
-  if (showAnswer) showAnswer.addEventListener('click', revealAnswer);
-  easyBtn.addEventListener('click', () => gradeReview('easy'));
-  mediumBtn.addEventListener('click', () => gradeReview('medium'));
-  hardBtn.addEventListener('click', () => gradeReview('hard'));
   finishReview.addEventListener('click', () => {
     reviewSummary.classList.add('hidden');
     renderApp();
@@ -2925,7 +3023,7 @@ function toggleTheme() {
 function saveSyncSettings() {
   if (!state.sync) state.sync = { enabled: false, endpoint: '', token: '' };
   state.sync.enabled = Boolean(syncEnabledInput?.checked);
-  state.sync.endpoint = (syncEndpointInput?.value || '').trim() || DEFAULT_SYNC_ENDPOINT;
+  state.sync.endpoint = (syncEndpointInput?.value || '').trim();
   state.sync.token = (syncTokenInput?.value || '').trim();
   saveState({ skipTouch: true });
   renderSettings();
@@ -2942,11 +3040,10 @@ function initUserDaily() {
 }
 
 function init() {
-  if (!state.sync) state.sync = { enabled: true, endpoint: DEFAULT_SYNC_ENDPOINT, token: '' };
-  if (!state.sync.endpoint || state.sync.endpoint === LEGACY_SYNC_ENDPOINT) {
+  if (!state.sync) state.sync = { enabled: false, endpoint: DEFAULT_SYNC_ENDPOINT, token: '' };
+  if (state.sync.endpoint === LEGACY_SYNC_ENDPOINT) {
     state.sync.endpoint = DEFAULT_SYNC_ENDPOINT;
   }
-  state.sync.enabled = true;
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
   checkMonthTransition();
   checkDayTransition();
@@ -2962,7 +3059,9 @@ function init() {
     renderApp();
   }
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(console.error);
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((registration) => {
+      registration.update().catch(() => {});
+    }).catch(console.error);
   }
   window.addEventListener('online', () => {
     setSyncStatus('Connexion retrouvée, synchronisation...');
@@ -2970,6 +3069,15 @@ function init() {
   });
   window.addEventListener('offline', () => {
     setSyncStatus('Hors ligne, sync en attente.');
+  });
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY || !event.newValue) return;
+    try {
+      replaceState(parseState(event.newValue));
+      renderApp();
+    } catch (error) {
+      console.warn('Could not apply external state update', error);
+    }
   });
   if (isSyncConfigured()) {
     scheduleSync(300);
@@ -2987,15 +3095,7 @@ function renderQuizStatus() {
     const chapters = [...new Set(state.questionBank.map(q => q.chapter).filter(Boolean))].sort();
     quizChapter.innerHTML = '<option value="all">Tous les chapitres</option>' + chapters.map(ch => `<option value="${ch}">${ch}</option>`).join('');
   }
-  if (quizQuestionFilter) {
-    const canSeeAll = state.currentUser === 'R';
-    const allOption = quizQuestionFilter.querySelector('option[value="all"]');
-    if (allOption) allOption.disabled = !canSeeAll;
-    if (!canSeeAll && quizQuestionFilter.value === 'all') quizQuestionFilter.value = 'mine';
-  }
   renderQuizQuestionManager();
-  // prepare quiz creation form (dynamic options)
-  if (quizCreateOptionsList) resetQuizCreateForm();
 }
 
 function shuffleArray(array) {
