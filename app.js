@@ -30,9 +30,6 @@ const defaultState = {
   questionBank: []
 };
 
-const sampleQuestions = generateSampleQuestions();
-const sampleFlashcards = generateSampleFlashcards();
-
 const state = loadState();
 
 function toLocalDateKey(date) {
@@ -728,195 +725,6 @@ function scheduleSync(delay = 1200) {
   }, delay);
 }
 
-function generateSampleFlashcards() {
-  const themes = [
-    { chapter: 'Campbell chapitre 1', tag: 'Cellule', question: 'Que contient toute cellule vivante ?', answer: 'ADN', note: 'L’ADN est la base de toute cellule.' },
-    { chapter: 'Campbell chapitre 2', tag: 'Membrane', question: 'Quel rôle joue la membrane plasmique ?', answer: 'Contrôle des échanges', note: 'Elle régule ce qui entre et sort.' },
-    { chapter: 'Campbell chapitre 6', tag: 'Photosynthèse', question: 'Quel est le produit principal de la photosynthèse ?', answer: 'Glucose', note: 'Le glucose est stocké et utilisé comme énergie.' },
-    { chapter: 'Campbell chapitre 9', tag: 'Génétique', question: 'Quelle molécule est transcrite en ARN ?', answer: 'ADN', note: 'L’ARN copie l’information de l’ADN.' },
-    { chapter: 'IBO 2023', tag: 'Écologie', question: 'Qu’est-ce qu’une niche écologique ?', answer: 'La fonction d’une espèce', note: 'C’est le rôle exact de l’espèce dans l’écosystème.' }
-  ];
-  const cards = [];
-  for (let i = 0; i < 100; i += 1) {
-    const source = themes[i % themes.length];
-    const owner = i % 2 === 0 ? 'G' : 'R';
-    const daysAgo = i % 15;
-    const date = getPastDate(daysAgo);
-    cards.push({
-      id: `sample-${i}`,
-      user: owner,
-      date,
-      question: `${source.question} (${source.chapter})`,
-      answer: source.answer,
-      tags: [source.tag, source.chapter, 'IBO'],
-      explanation: `Explique cette notion à l’autre : ${source.note}`,
-      note: `Aide : ${source.note}`,
-      reviews: [],
-      seenBy: []
-    });
-  }
-  return cards;
-}
-
-function generateSampleQuestions() {
-  const templates = [
-    {
-      chapter: 'Cellule',
-      theme: 'Noyau',
-      question: 'Quel organite contient le matériel génétique et contrôle les activités cellulaires ?',
-      options: ['Noyau', 'Mitochondrie', 'Ribosome', 'Golgi'],
-      answer: 'Noyau'
-    },
-    {
-      chapter: 'Cellule',
-      theme: 'Membrane',
-      question: 'Quelle structure contrôle le transport de substances dans et hors de la cellule ?',
-      options: ['Membrane plasmique', 'Paroi cellulaire', 'Noyau', 'Chloroplaste'],
-      answer: 'Membrane plasmique'
-    },
-    {
-      chapter: 'Cellule',
-      theme: 'Énergie',
-      question: 'Quelle organite produit de l’ATP pendant la respiration cellulaire ?',
-      options: ['Mitochondrie', 'Chloroplaste', 'Ribosome', 'Lysosome'],
-      answer: 'Mitochondrie'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Chloroplastes',
-      question: 'Dans quel organite a lieu la photosynthèse chez les plantes ?',
-      options: ['Chloroplaste', 'Mitochondrie', 'Noyau', 'Ribosome'],
-      answer: 'Chloroplaste'
-    },
-    {
-      chapter: 'Photosynthèse',
-      theme: 'Produits',
-      question: 'Quel gaz est libéré par une plante pendant la photosynthèse ?',
-      options: ['Oxygène', 'Dioxyde de carbone', 'Azote', 'Hydrogène'],
-      answer: 'Oxygène'
-    },
-    {
-      chapter: 'Respiration',
-      theme: 'Gaz respiratoires',
-      question: 'Quel gaz est consommé par les cellules lors de la respiration aérobie ?',
-      options: ['Dioxyde de carbone', 'Oxygène', 'Azote', 'Méthane'],
-      answer: 'Oxygène'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'ADN',
-      question: 'Quel type d’acide contient le code génétique ?',
-      options: ['ADN', 'ARN', 'Protéine', 'Lipide'],
-      answer: 'ADN'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Réplicaton',
-      question: 'Quelle enzyme est nécessaire pour copier l’ADN avant la division cellulaire ?',
-      options: ['ADN polymérase', 'Ribosome', 'Ligase', 'Amylase'],
-      answer: 'ADN polymérase'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Expression génique',
-      question: 'Quel ARN transporte le code du noyau vers le ribosome ?',
-      options: ['ARN messager', 'ARN transfert', 'ADN', 'ARN ribosomique'],
-      answer: 'ARN messager'
-    },
-    {
-      chapter: 'Génétique',
-      theme: 'Chromosomes',
-      question: 'Combien de chromosomes se trouvent normalement dans une cellule humaine diploïde ?',
-      options: ['46', '23', '92', '12'],
-      answer: '46'
-    },
-    {
-      chapter: 'Évolution',
-      theme: 'Sélection',
-      question: 'Comment s’appelle le processus par lequel les organismes mieux adaptés survivent et se reproduisent ?',
-      options: ['Sélection naturelle', 'Mutation', 'Dérive génétique', 'Migration'],
-      answer: 'Sélection naturelle'
-    },
-    {
-      chapter: 'Évolution',
-      theme: 'Variation',
-      question: 'Quel mécanisme produit une nouvelle combinaison de gènes lors de la formation des gamètes ?',
-      options: ['Recombinaison génétique', 'Mitose', 'Traduction', 'Transcription'],
-      answer: 'Recombinaison génétique'
-    },
-    {
-      chapter: 'Écologie',
-      theme: 'Réseaux trophiques',
-      question: 'Quel terme désigne les organismes qui fabriquent leur propre nourriture par photosynthèse ?',
-      options: ['Producteurs', 'Consommateurs', 'Décomposeurs', 'Prédateurs'],
-      answer: 'Producteurs'
-    },
-    {
-      chapter: 'Écologie',
-      theme: 'Cycles',
-      question: 'Quel cycle naturel implique l’échange de carbone entre l’atmosphère, les organismes et les océans ?',
-      options: ['Cycle du carbone', 'Cycle de l’eau', 'Cycle de l’azote', 'Cycle du phosphore'],
-      answer: 'Cycle du carbone'
-    },
-    {
-      chapter: 'Écologie',
-      theme: 'Habitat',
-      question: 'Comment appelle-t-on le lieu où vit une espèce et trouve ses ressources ?',
-      options: ['Habitat', 'Niche', 'Population', 'Communauté'],
-      answer: 'Habitat'
-    },
-    {
-      chapter: 'Physiologie',
-      theme: 'Enzymes',
-      question: 'Quel mot décrit une protéine qui accélère une réaction chimique dans une cellule ?',
-      options: ['Enzyme', 'Hormone', 'Anticorps', 'Acide aminé'],
-      answer: 'Enzyme'
-    },
-    {
-      chapter: 'Physiologie',
-      theme: 'Digestion',
-      question: 'Quel organe stocke la bile nécessaire à la digestion des lipides ?',
-      options: ['Vésicule biliaire', 'Estomac', 'Pancréas', 'Foie'],
-      answer: 'Vésicule biliaire'
-    },
-    {
-      chapter: 'Biologie humaine',
-      theme: 'Sang',
-      question: 'Quel composant du sang transporte l’oxygène ?',
-      options: ['Globules rouges', 'Plaquettes', 'Plasma', 'Globules blancs'],
-      answer: 'Globules rouges'
-    },
-    {
-      chapter: 'Biologie humaine',
-      theme: 'Neurones',
-      question: 'Quel type de cellule transmet des impulsions nerveuses ?',
-      options: ['Neurone', 'Érythrocyte', 'Fibroblaste', 'Chondrocyte'],
-      answer: 'Neurone'
-    },
-    {
-      chapter: 'Biologie des plantes',
-      theme: 'Stomates',
-      question: 'Quel élément des plantes régule les échanges de gaz avec l’air ?',
-      options: ['Stomate', 'Xylème', 'Phloème', 'Périderme'],
-      answer: 'Stomate'
-    }
-  ];
-  const questions = [];
-  for (let i = 0; i < 100; i += 1) {
-    const template = templates[i % templates.length];
-    questions.push({
-      id: `q-${i}`,
-      chapter: template.chapter,
-      theme: template.theme,
-      question: `Question ${i + 1} : ${template.question}`,
-      options: template.options,
-      answer: template.answer,
-      source: 'IBO'
-    });
-  }
-  return questions;
-}
-
 function getPastDate(daysAgo) {
   const date = new Date();
   date.setDate(date.getDate() - daysAgo);
@@ -985,17 +793,6 @@ function getDaily(user, day = getToday()) {
     user.daily[day] = { reading: 0, cards: 0, tested: 0, complete: false };
   }
   return user.daily[day];
-}
-
-function ensureSampleData() {
-  if (state.users.G.flashcards.length + state.users.R.flashcards.length === 0) {
-    sampleFlashcards.forEach((card) => {
-      getUser(card.user).flashcards.push(card);
-    });
-  }
-  if (!state.questionBank || state.questionBank.length === 0) {
-    state.questionBank = sampleQuestions.slice();
-  }
 }
 
 function checkDayTransition() {
@@ -2256,7 +2053,9 @@ function buildFlashcardReviewPool(options = {}) {
 
 function startFlashcardReview(cards, mode = 'review') {
   const count = parseInt(reviewCount.value, 10) || 10;
-  reviewQueue = sampleWeightedFlashcards(cards, count);
+  reviewQueue = mode === 'other-unseen'
+    ? cards.map(normalizeFlashcard).filter(Boolean)
+    : sampleWeightedFlashcards(cards, count);
   if (reviewQueue.length === 0) {
     alert('Aucune carte disponible pour ce test. Crée des flashcards d’abord.');
     return;
@@ -2281,16 +2080,6 @@ function startReviewSession() {
   const selectedTag = document.getElementById('review-tag-filter')?.value ?? '';
   const pool = buildFlashcardReviewPool({ todayOnly, selectedTag });
   startFlashcardReview(pool, 'review');
-}
-
-function shouldReview(card) {
-  const last = card.reviews?.slice(-1)[0];
-  if (!last) return true;
-  const intervals = { easy: 30, medium: 7, hard: 1 };
-  const days = intervals[last.difficulty] || 1;
-  const nextDue = new Date(last.date);
-  nextDue.setDate(nextDue.getDate() + days);
-  return new Date(getToday()) >= nextDue;
 }
 
 function renderReviewCard() {
@@ -2346,6 +2135,14 @@ function gradeReviewAnswer(selectedMastery) {
 function finishReviewSession() {
   reviewCard.classList.add('hidden');
   reviewSummary.classList.remove('hidden');
+  if (reviewSessionMode === 'other-unseen') {
+    reviewQueue.forEach(card => {
+      const original = findFlashcardById(card.id)?.card;
+      if (!original) return;
+      if (!original.seenBy) original.seenBy = [];
+      if (!original.seenBy.includes(state.currentUser)) original.seenBy.push(state.currentUser);
+    });
+  }
   const mastered = reviewCorrect;
   reviewResults.textContent = reviewSessionMode === 'other-unseen'
     ? `Cartes vues: ${reviewQueue.length}.`
@@ -2381,35 +2178,8 @@ function startQuizSession() {
   renderQuizRunCard();
 }
 
-function renderQuizCard() {
-  if (!quizState) return;
-  const question = quizState.questions[quizState.index];
-  quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length}`;
-  quizQuestion.textContent = question.question;
-  quizOptions.innerHTML = '';
-  question.options.forEach(option => {
-    const btn = document.createElement('button');
-    btn.className = 'option-button';
-    btn.type = 'button';
-    btn.textContent = option;
-    btn.addEventListener('click', () => selectQuizOption(btn, option));
-    quizOptions.appendChild(btn);
-  });
-  quizState.selected = null;
-  Array.from(quizOptions.children).forEach(btn => btn.classList.remove('correct', 'wrong', 'active'));
-  validateQuiz.disabled = false;
-  quizSummary.classList.add('hidden');
-  quizProgressFill.style.width = `${((quizState.index) / quizState.questions.length) * 100}%`;
-  quizProgressLabel.textContent = `${quizState.index + 1} / ${quizState.questions.length}`;
-}
-
 function showIBAnnales() {
   importAnnalesInput.click();
-}
-
-function pickRandomQuestion() {
-  if (!state.questionBank || state.questionBank.length === 0) return null;
-  return state.questionBank[Math.floor(Math.random() * state.questionBank.length)];
 }
 
 function selectQuizOption(button, option) {
