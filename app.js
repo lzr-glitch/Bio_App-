@@ -24,8 +24,8 @@ const defaultState = {
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   deleted: { flashcards: {}, questionBank: {} },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], statsOverride: {}, workHistory: [] }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [] },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [] }
   },
   questionBank: []
 };
@@ -220,8 +220,13 @@ let monthlyState = null;
 let currentLibraryGroup = null;
 let editingFlashcardId = null;
 let syncInFlight = false;
+let syncRequestedWhileBusy = false;
 let syncDebounceTimeout = null;
 let syncPollInterval = null;
+
+function createEventId(prefix) {
+  return `${prefix}-${state.currentUser || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -299,6 +304,16 @@ function escapeHtml(value) {
 
 function isSyncConfigured() {
   return Boolean(state.sync?.enabled && state.sync?.endpoint);
+}
+
+function normalizeSyncEndpoint(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+  if (/\/bio-app\/state\.json$/i.test(value)) return value;
+  if (/firebasedatabase\.app\/?$/i.test(value) || /firebaseio\.com\/?$/i.test(value)) {
+    return `${value.replace(/\/+$/, '')}/bio-app/state.json`;
+  }
+  return value;
 }
 
 function setSyncStatus(message) {
@@ -434,6 +449,17 @@ function mergeById(localItems = [], remoteItems = [], deletedMap = {}) {
   return [...merged.values()];
 }
 
+function normalizeEventItem(item, prefix) {
+  if (!item || typeof item !== 'object') return item;
+  const normalized = { ...item };
+  if (!normalized.id) {
+    const baseTime = normalized.updatedAt || normalized.createdAt || normalized.date || Date.now();
+    normalized.id = `${prefix}-${normalized.createdBy || normalized.user || 'legacy'}-${String(baseTime).replace(/[^0-9TZ:.-]/g, '')}`;
+  }
+  if (!normalized.updatedAt) normalized.updatedAt = normalized.createdAt || normalized.date || new Date().toISOString();
+  return normalized;
+}
+
 function mergeNumericMaps(localMap = {}, remoteMap = {}) {
   const merged = { ...localMap };
   Object.keys(remoteMap || {}).forEach(key => {
@@ -471,12 +497,11 @@ function mergeUsers(localUser, remoteUser, deleted = {}) {
     readingSeconds: mergeNumericMaps(local.readingSeconds, remote.readingSeconds),
     daily: mergeDailyMaps(local.daily, remote.daily),
     flashcards: mergeById(local.flashcards || [], remote.flashcards || [], deleted.flashcards || {}).map(normalizeFlashcard),
-    quizzes: mergeById(local.quizzes || [], remote.quizzes || []),
-    tests: mergeById(local.tests || [], remote.tests || []),
-    monthlyTests: mergeById(local.monthlyTests || [], remote.monthlyTests || []),
+    quizzes: mergeById((local.quizzes || []).map(item => normalizeEventItem(item, 'quiz')), (remote.quizzes || []).map(item => normalizeEventItem(item, 'quiz'))),
+    tests: mergeById((local.tests || []).map(item => normalizeEventItem(item, 'test')), (remote.tests || []).map(item => normalizeEventItem(item, 'test'))),
+    monthlyTests: mergeById((local.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly')), (remote.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'))),
     badges: [...new Set([...(local.badges || []), ...(remote.badges || [])])],
-    workHistory: mergeById(local.workHistory || [], remote.workHistory || []),
-    statsOverride: { ...(local.statsOverride || {}), ...(remote.statsOverride || {}) }
+    workHistory: mergeById((local.workHistory || []).map(item => normalizeEventItem(item, 'work')), (remote.workHistory || []).map(item => normalizeEventItem(item, 'work')))
   };
 }
 
@@ -672,8 +697,12 @@ async function syncNow(showFeedback = false) {
     if (showFeedback) setSyncStatus('Hors ligne, sync en attente.');
     return false;
   }
-  if (syncInFlight) return false;
+  if (syncInFlight) {
+    syncRequestedWhileBusy = true;
+    return false;
+  }
   syncInFlight = true;
+  syncRequestedWhileBusy = false;
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
     const localDoc = buildSyncDocument();
@@ -712,6 +741,12 @@ async function syncNow(showFeedback = false) {
     return false;
   } finally {
     syncInFlight = false;
+    if (syncRequestedWhileBusy && isSyncConfigured() && navigator.onLine) {
+      syncRequestedWhileBusy = false;
+      setTimeout(() => {
+        syncNow(false);
+      }, 150);
+    }
   }
 }
 
@@ -723,6 +758,18 @@ function scheduleSync(delay = 1200) {
   syncDebounceTimeout = setTimeout(() => {
     syncNow(false);
   }, delay);
+}
+
+function startSyncPolling() {
+  if (syncPollInterval) clearInterval(syncPollInterval);
+  if (!isSyncConfigured()) {
+    syncPollInterval = null;
+    return;
+  }
+  const intervalMs = document.hidden ? 10000 : 2500;
+  syncPollInterval = setInterval(() => {
+    syncNow(false);
+  }, intervalMs);
 }
 
 function getPastDate(daysAgo) {
@@ -746,7 +793,6 @@ function getUser(id) {
       daily: {},
       monthlyTests: [],
       badges: [],
-      statsOverride: {},
       workHistory: []
     };
   }
@@ -759,7 +805,6 @@ function getUser(id) {
   if (!user.daily || typeof user.daily !== 'object') user.daily = {};
   if (!Array.isArray(user.monthlyTests)) user.monthlyTests = [];
   if (!Array.isArray(user.badges)) user.badges = [];
-  if (!user.statsOverride || typeof user.statsOverride !== 'object') user.statsOverride = {};
   if (!Array.isArray(user.workHistory)) user.workHistory = [];
   if (!user.chapters || typeof user.chapters !== 'object') user.chapters = {};
   return user;
@@ -1321,9 +1366,12 @@ function saveWorkNote(sendToOther) {
   const user = getUser(state.currentUser);
   if (!user.workHistory) user.workHistory = [];
   const note = workNoteText.value.trim();
+  const entryTimestamp = new Date().toISOString();
   const entry = {
-    id: `work-${Date.now()}`,
-    date: new Date().toISOString(),
+    id: createEventId('work'),
+    date: entryTimestamp,
+    createdAt: entryTimestamp,
+    updatedAt: entryTimestamp,
     duration: currentWorkSession.duration,
     note,
     sentToOther: sendToOther,
@@ -1335,8 +1383,10 @@ function saveWorkNote(sendToOther) {
     const other = getUser(getOtherUserId());
     if (!other.workHistory) other.workHistory = [];
     other.workHistory.unshift({
-      id: `work-received-${Date.now()}`,
-      date: new Date().toISOString(),
+      id: createEventId('work-received'),
+      date: entryTimestamp,
+      createdAt: entryTimestamp,
+      updatedAt: entryTimestamp,
       duration: currentWorkSession.duration,
       note,
       sentFrom: state.currentUser,
@@ -2148,7 +2198,17 @@ function finishReviewSession() {
     ? `Cartes vues: ${reviewQueue.length}.`
     : `Tu as classé ${mastered} carte(s) comme maîtrisées sur ${reviewQueue.length}.`;
   const user = getUser(state.currentUser);
-  user.tests.push({ date: getToday(), count: reviewQueue.length, correct: reviewCorrect, score: Math.round((reviewCorrect / reviewQueue.length) * 100), mode: reviewSessionMode });
+  const reviewTimestamp = new Date().toISOString();
+  user.tests.push({
+    id: createEventId('test'),
+    date: getToday(),
+    createdAt: reviewTimestamp,
+    updatedAt: reviewTimestamp,
+    count: reviewQueue.length,
+    correct: reviewCorrect,
+    score: Math.round((reviewCorrect / reviewQueue.length) * 100),
+    mode: reviewSessionMode
+  });
   const daily = getDaily(user);
   daily.tested = user.tests.filter(test => test.date === getToday()).length;
   tryCompleteDay(user);
@@ -2180,11 +2240,6 @@ function startQuizSession() {
 
 function showIBAnnales() {
   importAnnalesInput.click();
-}
-
-function selectQuizOption(button, option) {
-  quizState.selected = option;
-  Array.from(quizOptions.children).forEach(btn => btn.classList.toggle('active', btn === button));
 }
 
 function renderQuizRunCard() {
@@ -2251,7 +2306,17 @@ function validateQuizAnswer() {
   const isCorrect = setsEqual([...selectedIndices].sort((x,y)=>x-y), [...correctIndices].sort((x,y)=>x-y));
 
   const user = getUser(state.currentUser);
-  user.quizzes.push({ date: getToday(), questionId: question.id, correct: isCorrect, score: isCorrect ? 100 : 0, chapter: question.chapter });
+  const quizTimestamp = new Date().toISOString();
+  user.quizzes.push({
+    id: createEventId('quiz'),
+    date: getToday(),
+    createdAt: quizTimestamp,
+    updatedAt: quizTimestamp,
+    questionId: question.id,
+    correct: isCorrect,
+    score: isCorrect ? 100 : 0,
+    chapter: question.chapter
+  });
   const daily = getDaily(user);
   daily.tested = user.tests.filter(test => test.date === getToday()).length + user.quizzes.filter(quiz => quiz.date === getToday()).length;
   tryCompleteDay(user);
@@ -2524,7 +2589,15 @@ function finishMonthlyTest() {
   const score = Math.round((monthlyState.correct / monthlyState.questions.length) * 100);
   monthlyResults.textContent = `Score mensuel : ${score}% (${monthlyState.correct}/${monthlyState.questions.length}).`;
   const user = getUser(state.currentUser);
-  user.monthlyTests.push({ date: getToday(), score, total: monthlyState.questions.length });
+  const monthlyTimestamp = new Date().toISOString();
+  user.monthlyTests.push({
+    id: createEventId('monthly'),
+    date: getToday(),
+    createdAt: monthlyTimestamp,
+    updatedAt: monthlyTimestamp,
+    score,
+    total: monthlyState.questions.length
+  });
   saveState();
   monthlyState = null;
   renderApp();
@@ -2813,9 +2886,10 @@ function toggleTheme() {
 function saveSyncSettings() {
   if (!state.sync) state.sync = { enabled: false, endpoint: '', token: '' };
   state.sync.enabled = Boolean(syncEnabledInput?.checked);
-  state.sync.endpoint = (syncEndpointInput?.value || '').trim();
+  state.sync.endpoint = normalizeSyncEndpoint(syncEndpointInput?.value);
   state.sync.token = (syncTokenInput?.value || '').trim();
   saveState({ skipTouch: true });
+  startSyncPolling();
   renderSettings();
   if (state.sync.enabled && state.sync.endpoint) {
     syncNow(true);
@@ -2857,6 +2931,20 @@ function init() {
     setSyncStatus('Connexion retrouvée, synchronisation...');
     syncNow(false);
   });
+  window.addEventListener('focus', () => {
+    if (!isSyncConfigured()) return;
+    syncNow(false);
+  });
+  window.addEventListener('pageshow', () => {
+    if (!isSyncConfigured()) return;
+    syncNow(false);
+  });
+  document.addEventListener('visibilitychange', () => {
+    startSyncPolling();
+    if (!document.hidden && isSyncConfigured()) {
+      syncNow(false);
+    }
+  });
   window.addEventListener('offline', () => {
     setSyncStatus('Hors ligne, sync en attente.');
   });
@@ -2871,11 +2959,7 @@ function init() {
   });
   if (isSyncConfigured()) {
     scheduleSync(300);
-    if (!syncPollInterval) {
-      syncPollInterval = setInterval(() => {
-        syncNow(false);
-      }, 4000);
-    }
+    startSyncPolling();
   }
 }
 
