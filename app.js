@@ -1510,7 +1510,7 @@ function showAdminFeedback(message) {
 }
 
 function showProfileStats(userKey) {
-  statsTarget = userKey;
+  statsTarget = userKey === 'R' ? 'R' : 'G';
   renderStats();
   goToPage('stats', true);
 }
@@ -1655,7 +1655,7 @@ function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, righ
 }
 
 function renderStats() {
-  const leftUserId = statsTarget || state.currentUser;
+  const leftUserId = statsTarget === 'R' ? 'R' : 'G';
   const rightUserId = leftUserId === 'G' ? 'R' : 'G';
   const leftUser = getUser(leftUserId);
   const rightUser = getUser(rightUserId);
