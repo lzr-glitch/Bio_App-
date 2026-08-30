@@ -199,6 +199,8 @@ const viewMyStats = document.getElementById('view-my-stats');
 const viewMyBadges = document.getElementById('view-my-badges');
 const viewOtherStats = document.getElementById('view-other-stats');
 const viewOtherBadges = document.getElementById('view-other-badges');
+const profileHeadingG = document.getElementById('profile-heading-g');
+const profileHeadingR = document.getElementById('profile-heading-r');
 const adminStreakJokers = document.getElementById('admin-streak-jokers');
 const saveAdminSettings = document.getElementById('save-admin-settings');
 
@@ -1406,24 +1408,26 @@ function saveWorkNote(sendToOther) {
 }
 
 function renderProfile() {
-  const user = getUser(state.currentUser);
-  const other = getUser(getOtherUserId());
-  const userDisplay = getProfileDisplayStats(user);
-  const otherDisplay = getProfileDisplayStats(other);
-  setText(myJokers, user.jokers);
-  setText(myTotalCards, userDisplay.totalCards);
-  setText(myWeekCards, userDisplay.weekCards);
-  setText(myTotalTests, userDisplay.totalTests);
-  setText(myTotalQuizzes, userDisplay.totalQuizzes);
-  setText(mySuccessRate, `${userDisplay.successRate}%`);
-  setText(myTotalReading, `${userDisplay.totalReading} min`);
-  setText(otherJokers, other.jokers);
-  setText(otherTotalCards, otherDisplay.totalCards);
-  setText(otherWeekCards, otherDisplay.weekCards);
-  setText(otherTotalTests, otherDisplay.totalTests);
-  setText(otherTotalQuizzes, otherDisplay.totalQuizzes);
-  setText(otherSuccessRate, `${otherDisplay.successRate}%`);
-  setText(otherTotalReading, `${otherDisplay.totalReading} min`);
+  const userG = getUser('G');
+  const userR = getUser('R');
+  const displayG = getProfileDisplayStats(userG);
+  const displayR = getProfileDisplayStats(userR);
+  setText(profileHeadingG, 'G');
+  setText(profileHeadingR, 'R');
+  setText(myJokers, userG.jokers);
+  setText(myTotalCards, displayG.totalCards);
+  setText(myWeekCards, displayG.weekCards);
+  setText(myTotalTests, displayG.totalTests);
+  setText(myTotalQuizzes, displayG.totalQuizzes);
+  setText(mySuccessRate, `${displayG.successRate}%`);
+  setText(myTotalReading, `${displayG.totalReading} min`);
+  setText(otherJokers, userR.jokers);
+  setText(otherTotalCards, displayR.totalCards);
+  setText(otherWeekCards, displayR.weekCards);
+  setText(otherTotalTests, displayR.totalTests);
+  setText(otherTotalQuizzes, displayR.totalQuizzes);
+  setText(otherSuccessRate, `${displayR.successRate}%`);
+  setText(otherTotalReading, `${displayR.totalReading} min`);
   if (adminSyncCard) {
     adminSyncCard.classList.remove('hidden');
   }
@@ -2679,10 +2683,10 @@ function attachHandlers() {
     if (importAnnalesInput.files.length) importAnnales();
   });
   if (saveAdminSettings) saveAdminSettings.addEventListener('click', saveAdminChanges);
-  viewMyStats.addEventListener('click', () => showProfileStats(state.currentUser));
-  viewMyBadges.addEventListener('click', () => showProfileBadges(state.currentUser));
-  viewOtherStats.addEventListener('click', () => showProfileStats(getOtherUserId()));
-  viewOtherBadges.addEventListener('click', () => showProfileBadges(getOtherUserId()));
+  viewMyStats.addEventListener('click', () => showProfileStats('G'));
+  viewMyBadges.addEventListener('click', () => showProfileBadges('G'));
+  viewOtherStats.addEventListener('click', () => showProfileStats('R'));
+  viewOtherBadges.addEventListener('click', () => showProfileBadges('R'));
   timerStart.addEventListener('click', startTimer);
   timerPause.addEventListener('click', pauseTimer);
   timerStop.addEventListener('click', stopTimer);
