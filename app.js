@@ -225,6 +225,8 @@ let syncInFlight = false;
 let syncRequestedWhileBusy = false;
 let syncDebounceTimeout = null;
 let syncPollInterval = null;
+let syncEventSource = null;
+let lastRemoteDocUpdatedAt = 0;
 
 function createEventId(prefix) {
   return `${prefix}-${state.currentUser || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -507,6 +509,22 @@ function mergeUsers(localUser, remoteUser, deleted = {}) {
   };
 }
 
+function applyDeletedToUser(user, deleted = {}) {
+  const safeUser = deepMerge(JSON.parse(JSON.stringify(defaultState.users[user?.name] || defaultState.users.G)), user || {});
+  safeUser.flashcards = mergeById(safeUser.flashcards || [], [], deleted.flashcards || {}).map(normalizeFlashcard);
+  safeUser.quizzes = (safeUser.quizzes || []).map(item => normalizeEventItem(item, 'quiz'));
+  safeUser.tests = (safeUser.tests || []).map(item => normalizeEventItem(item, 'test'));
+  safeUser.monthlyTests = (safeUser.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'));
+  safeUser.workHistory = (safeUser.workHistory || []).map(item => normalizeEventItem(item, 'work'));
+  return safeUser;
+}
+
+function mergeUserSnapshots(localUser, remoteUser, localTs, remoteTs, deleted = {}) {
+  if (localTs > remoteTs) return applyDeletedToUser(localUser, deleted);
+  if (remoteTs > localTs) return applyDeletedToUser(remoteUser, deleted);
+  return mergeUsers(localUser, remoteUser, deleted);
+}
+
 function normalizeFlashcard(card) {
   if (!card || typeof card !== 'object') return card;
   const answer = typeof card.answer === 'string' && card.answer.trim()
@@ -597,7 +615,7 @@ function mergeSyncDocs(localDoc, remoteDoc) {
   ['G', 'R'].forEach(userId => {
     const localTs = local.meta.usersUpdatedAt[userId] || 0;
     const remoteTs = remote.meta.usersUpdatedAt[userId] || 0;
-    merged.data.users[userId] = mergeUsers(local.data.users[userId], remote.data.users[userId], mergedDeleted);
+    merged.data.users[userId] = mergeUserSnapshots(local.data.users[userId], remote.data.users[userId], localTs, remoteTs, mergedDeleted);
     merged.meta.usersUpdatedAt[userId] = Math.max(localTs, remoteTs);
   });
 
@@ -772,6 +790,77 @@ function startSyncPolling() {
   syncPollInterval = setInterval(() => {
     syncNow(false);
   }, intervalMs);
+}
+
+function stopSyncRealtime() {
+  if (syncEventSource) {
+    syncEventSource.close();
+    syncEventSource = null;
+  }
+}
+
+function getComparableSyncDoc(doc) {
+  const safe = sanitizeSyncDoc(doc);
+  if (!safe) return '';
+  return JSON.stringify({
+    meta: safe.meta,
+    data: safe.data
+  });
+}
+
+function handleIncomingRemoteDoc(remoteDoc) {
+  const safeRemote = sanitizeSyncDoc(remoteDoc);
+  if (!safeRemote) return false;
+  if (!safeRemote.updatedAt && !safeRemote.meta?.globalUpdatedAt) return false;
+  const remoteStamp = safeRemote.updatedAt || safeRemote.meta.globalUpdatedAt || 0;
+  const localDoc = buildSyncDocument();
+  if (remoteStamp < (lastRemoteDocUpdatedAt || 0) && remoteStamp <= (localDoc.updatedAt || 0)) {
+    return false;
+  }
+  const mergedDoc = mergeSyncDocs(localDoc, safeRemote);
+  const shouldRepush = getComparableSyncDoc(mergedDoc) !== getComparableSyncDoc(safeRemote);
+  applySyncDoc(mergedDoc);
+  lastRemoteDocUpdatedAt = Math.max(remoteStamp, mergedDoc.updatedAt || 0);
+  state.syncMeta.lastSyncedAt = Date.now();
+  saveState({ skipTouch: true, skipSync: true });
+  renderApp();
+  if (shouldRepush && navigator.onLine) {
+    scheduleSync(120);
+  }
+  return true;
+}
+
+function startSyncRealtime() {
+  stopSyncRealtime();
+  if (!isSyncConfigured()) return;
+  if (typeof EventSource === 'undefined') return;
+  if (state.sync?.token) return;
+  try {
+    syncEventSource = new EventSource(state.sync.endpoint, { withCredentials: false });
+    const handleEvent = (event) => {
+      try {
+        const payload = JSON.parse(event.data || 'null');
+        if (!payload || payload.data == null) return;
+        const nextDoc = payload.path === '/' ? payload.data : null;
+        if (!nextDoc) return;
+        handleIncomingRemoteDoc(nextDoc);
+      } catch (error) {
+        console.warn('sync stream parse failed', error);
+      }
+    };
+    syncEventSource.addEventListener('put', handleEvent);
+    syncEventSource.addEventListener('patch', async () => {
+      await syncNow(false);
+    });
+    syncEventSource.addEventListener('error', () => {
+      stopSyncRealtime();
+      setTimeout(() => {
+        if (isSyncConfigured()) startSyncRealtime();
+      }, 3000);
+    });
+  } catch (error) {
+    console.warn('Could not start realtime sync stream', error);
+  }
 }
 
 function getPastDate(daysAgo) {
@@ -1655,10 +1744,8 @@ function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, righ
 }
 
 function renderStats() {
-  const leftUserId = statsTarget === 'R' ? 'R' : 'G';
-  const rightUserId = leftUserId === 'G' ? 'R' : 'G';
-  const leftUser = getUser(leftUserId);
-  const rightUser = getUser(rightUserId);
+  const leftUser = getUser('G');
+  const rightUser = getUser('R');
   document.querySelector('#page-stats h2').textContent = `Statistiques ${leftUser.name} vs ${rightUser.name}`;
   setStatsTargetHint(leftUser, rightUser);
   statsCharts.innerHTML = '';
@@ -2894,6 +2981,8 @@ function saveSyncSettings() {
   state.sync.token = (syncTokenInput?.value || '').trim();
   saveState({ skipTouch: true });
   startSyncPolling();
+  if (state.sync.enabled && state.sync.endpoint) startSyncRealtime();
+  else stopSyncRealtime();
   renderSettings();
   if (state.sync.enabled && state.sync.endpoint) {
     syncNow(true);
@@ -2933,6 +3022,7 @@ function init() {
   }
   window.addEventListener('online', () => {
     setSyncStatus('Connexion retrouvée, synchronisation...');
+    startSyncRealtime();
     syncNow(false);
   });
   window.addEventListener('focus', () => {
@@ -2950,6 +3040,7 @@ function init() {
     }
   });
   window.addEventListener('offline', () => {
+    stopSyncRealtime();
     setSyncStatus('Hors ligne, sync en attente.');
   });
   window.addEventListener('storage', (event) => {
@@ -2964,6 +3055,8 @@ function init() {
   if (isSyncConfigured()) {
     scheduleSync(300);
     startSyncPolling();
+    startSyncRealtime();
+    syncNow(false);
   }
 }
 
