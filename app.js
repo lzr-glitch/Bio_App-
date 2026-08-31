@@ -275,6 +275,10 @@ function saveState(options = {}) {
   if (!options.skipTouch) {
     touchSyncMeta();
   }
+  if (!options.skipSync && state.currentUser) {
+    if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
+    state.syncMeta.pendingUpdateAt = Date.now();
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -448,7 +452,16 @@ function mergeById(localItems = [], remoteItems = [], deletedMap = {}) {
     }
     const previousTime = new Date(previous.updatedAt || previous.createdAt || previous.date || 0).getTime() || 0;
     const itemTime = new Date(item.updatedAt || item.createdAt || item.date || 0).getTime() || 0;
-    merged.set(key, itemTime >= previousTime ? { ...previous, ...item } : { ...item, ...previous });
+    const newer = itemTime >= previousTime ? item : previous;
+    const older = itemTime >= previousTime ? previous : item;
+    const combined = { ...older, ...newer };
+    if (Array.isArray(previous.seenBy) || Array.isArray(item.seenBy)) {
+      combined.seenBy = [...new Set([...(previous.seenBy || []), ...(item.seenBy || [])])];
+    }
+    if (Array.isArray(previous.reviews) || Array.isArray(item.reviews)) {
+      combined.reviews = mergeById(previous.reviews || [], item.reviews || []);
+    }
+    merged.set(key, combined);
   });
   return [...merged.values()];
 }
@@ -520,8 +533,6 @@ function applyDeletedToUser(user, deleted = {}) {
 }
 
 function mergeUserSnapshots(localUser, remoteUser, localTs, remoteTs, deleted = {}) {
-  if (localTs > remoteTs) return applyDeletedToUser(localUser, deleted);
-  if (remoteTs > localTs) return applyDeletedToUser(remoteUser, deleted);
   return mergeUsers(localUser, remoteUser, deleted);
 }
 
@@ -715,7 +726,7 @@ async function pushRemoteDoc(doc, etag = null) {
   }
 }
 
-async function syncNow(showFeedback = false) {
+async function syncNowLegacy(showFeedback = false) {
   if (!isSyncConfigured()) {
     if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
     return false;
@@ -789,6 +800,115 @@ async function syncNow(showFeedback = false) {
   }
 }
 
+function getSyncV2BaseUrl() {
+  return state.sync.endpoint.replace(/\/state\.json(?:\?.*)?$/i, '/sync-v2');
+}
+
+function getSyncV2Url(section) {
+  return `${getSyncV2BaseUrl()}/${section}.json`;
+}
+
+async function fetchSyncJson(url, withEtag = false) {
+  const headers = getSyncHeaders();
+  if (withEtag) headers['X-Firebase-ETag'] = 'true';
+  const response = await fetch(url, { method: 'GET', cache: 'no-store', headers });
+  if (response.status === 404) return { doc: null, etag: null };
+  if (!response.ok) throw new Error(`GET ${response.status}`);
+  return { doc: await response.json(), etag: response.headers.get('etag') };
+}
+
+async function putSyncJson(url, doc, etag = null) {
+  const headers = getSyncHeaders();
+  if (etag) headers['if-match'] = etag;
+  const response = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(doc) });
+  if (response.status === 412) return false;
+  if (!response.ok) throw new Error(`PUT ${response.status}`);
+  return true;
+}
+
+async function loadSyncV2() {
+  const [common, updateG, updateR] = await Promise.all([
+    fetchSyncJson(getSyncV2Url('common'), true),
+    fetchSyncJson(getSyncV2Url('updates/G'), true),
+    fetchSyncJson(getSyncV2Url('updates/R'), true)
+  ]);
+  let commonDoc = common.doc;
+  let migrated = false;
+  if (!commonDoc) {
+    commonDoc = await pullRemoteDoc() || buildSyncDocument();
+    const stored = await putSyncJson(getSyncV2Url('common'), commonDoc, common.etag);
+    if (!stored) return loadSyncV2();
+    migrated = true;
+  }
+  let merged = sanitizeSyncDoc(commonDoc) || buildSyncDocument();
+  [updateG.doc, updateR.doc].forEach(update => {
+    if (update) merged = mergeSyncDocs(merged, update);
+  });
+  return { doc: merged, migrated };
+}
+
+async function saveSyncV2Update(userId, doc) {
+  const url = getSyncV2Url(`updates/${userId}`);
+  let candidate = doc;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    const remote = await fetchSyncJson(url, true);
+    candidate = remote.doc ? mergeSyncDocs(candidate, remote.doc) : candidate;
+    if (await putSyncJson(url, candidate, remote.etag)) return candidate;
+    await new Promise(resolve => setTimeout(resolve, 100 + Math.floor(Math.random() * 200)));
+  }
+  throw new Error('mise à jour du profil en attente');
+}
+
+async function syncNow(showFeedback = false) {
+  if (!isSyncConfigured()) {
+    if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
+    return false;
+  }
+  if (!navigator.onLine) {
+    if (showFeedback) setSyncStatus('Hors ligne, sync en attente.');
+    return false;
+  }
+  if (syncInFlight) {
+    syncRequestedWhileBusy = true;
+    return false;
+  }
+  syncInFlight = true;
+  syncRequestedWhileBusy = false;
+  if (showFeedback) setSyncStatus('Synchronisation en cours...');
+  try {
+    const pendingUpdateAt = Number(state.syncMeta?.pendingUpdateAt) || 0;
+    const localDoc = buildSyncDocument();
+    const remote = await loadSyncV2();
+    let mergedDoc = mergeSyncDocs(localDoc, remote.doc);
+    const resetFromRemote = (remote.doc.meta?.resetEpoch || 0) > (localDoc.meta?.resetEpoch || 0);
+    if (resetFromRemote) {
+      applySyncDoc(remote.doc);
+      if (state.syncMeta) delete state.syncMeta.pendingUpdateAt;
+    } else if (pendingUpdateAt || remote.migrated) {
+      mergedDoc = await saveSyncV2Update(state.currentUser, mergedDoc);
+      applySyncDoc(mergedDoc);
+      if (state.syncMeta?.pendingUpdateAt === pendingUpdateAt) delete state.syncMeta.pendingUpdateAt;
+    } else {
+      applySyncDoc(mergedDoc);
+    }
+    state.syncMeta.lastSyncedAt = Date.now();
+    saveState({ skipTouch: true, skipSync: true });
+    renderApp();
+    const timeLabel = new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR');
+    setSyncStatus(`Synchronisé (${timeLabel}).`);
+    return true;
+  } catch (error) {
+    setSyncStatus(`Erreur sync: ${error.message}`);
+    return false;
+  } finally {
+    syncInFlight = false;
+    if (syncRequestedWhileBusy && isSyncConfigured() && navigator.onLine) {
+      syncRequestedWhileBusy = false;
+      setTimeout(() => syncNow(false), 150);
+    }
+  }
+}
+
 function scheduleSync(delay = 1200) {
   if (!isSyncConfigured()) return;
   if (!navigator.onLine) return;
@@ -851,6 +971,7 @@ function handleIncomingRemoteDoc(remoteDoc) {
 
 function startSyncRealtime() {
   stopSyncRealtime();
+  return;
   if (!isSyncConfigured()) return;
   if (typeof EventSource === 'undefined') return;
   if (state.sync?.token) return;
@@ -2753,15 +2874,18 @@ async function resetGlobalData() {
   try {
     const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const remote = await pullRemoteDoc(true);
+      const remote = await fetchSyncJson(getSyncV2Url('common'), true);
       const remoteEpoch = Number(remote.doc?.meta?.resetEpoch) || 0;
       const localEpoch = Number(state.syncMeta?.resetEpoch) || 0;
       const resetEpoch = Math.max(Date.now(), remoteEpoch + 1, localEpoch + 1);
       const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
       replaceState(nextState);
       const resetDoc = buildSyncDocument();
-      const result = await pushRemoteDoc(resetDoc, remote.etag);
-      if (result.conflict) continue;
+      if (!await putSyncJson(getSyncV2Url('common'), resetDoc, remote.etag)) continue;
+      await Promise.all([
+        putSyncJson(getSyncV2Url('updates/G'), null),
+        putSyncJson(getSyncV2Url('updates/R'), null)
+      ]);
       applySyncDoc(resetDoc);
       state.syncMeta.lastSyncedAt = Date.now();
       saveState({ skipTouch: true, skipSync: true });
