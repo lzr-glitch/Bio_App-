@@ -732,7 +732,7 @@ async function syncNow(showFeedback = false) {
   syncRequestedWhileBusy = false;
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
-    const maxMergeAttempts = 6;
+    const maxMergeAttempts = 12;
     let mergedDoc = null;
     let synced = false;
     for (let attempt = 1; attempt <= maxMergeAttempts; attempt += 1) {
@@ -751,9 +751,12 @@ async function syncNow(showFeedback = false) {
         break;
       }
       console.debug(`syncNow: retrying merge after concurrent update (${attempt}/${maxMergeAttempts})`);
+      await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 320) + (attempt * 90)));
     }
     if (!synced || !mergedDoc) {
-      throw new Error('conflit de synchronisation persistant, réessaie dans un instant');
+      scheduleSync(3000);
+      if (showFeedback) setSyncStatus('Synchronisation différée : une autre version de l’app écrit encore.');
+      return false;
     }
     applySyncDoc(mergedDoc);
     state.syncMeta.lastSyncedAt = Date.now();
