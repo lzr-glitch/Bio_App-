@@ -1,4 +1,5 @@
 ﻿const STORAGE_KEY = 'revisio-ibo-state';
+const SYNC_DEVICE_STORAGE_KEY = 'revisio-ibo-sync-device-id';
 const LEGACY_SYNC_ENDPOINT = 'https://lzr-glitch.github.io/Bio_App-/';
 const DEFAULT_SYNC_ENDPOINT = '';
 const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
@@ -227,6 +228,9 @@ let syncDebounceTimeout = null;
 let syncPollInterval = null;
 let syncEventSource = null;
 let lastRemoteDocUpdatedAt = 0;
+let syncRetryTimeout = null;
+let syncFailureCount = 0;
+const SYNC_REQUEST_TIMEOUT_MS = 8000;
 
 function createEventId(prefix) {
   return `${prefix}-${state.currentUser || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -328,6 +332,34 @@ function normalizeSyncEndpoint(rawValue) {
 function setSyncStatus(message) {
   if (!syncStatus) return;
   syncStatus.textContent = message;
+}
+
+async function fetchWithSyncTimeout(url, options) {
+  if (typeof AbortController === 'undefined') return fetch(url, options);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SYNC_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('délai de synchronisation dépassé');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function scheduleSyncRetry() {
+  if (!isSyncConfigured() || !navigator.onLine) return;
+  syncFailureCount = Math.min(syncFailureCount + 1, 5);
+  const delay = Math.min(30000, 1000 * (2 ** syncFailureCount)) + Math.floor(Math.random() * 400);
+  clearTimeout(syncRetryTimeout);
+  syncRetryTimeout = setTimeout(() => syncNow(false), delay);
+}
+
+function resetSyncRetry() {
+  syncFailureCount = 0;
+  clearTimeout(syncRetryTimeout);
+  syncRetryTimeout = null;
 }
 
 function getSyncHeaders() {
@@ -437,7 +469,7 @@ function mergeQuestionBank(localQuestions, remoteQuestions, deletedMap = {}) {
     const currentTime = new Date(question.createdAt || 0).getTime() || 0;
     merged.set(question.id, currentTime >= existingTime ? question : existing);
   });
-  return [...merged.values()];
+  return [...merged.values()].sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
 }
 
 function mergeById(localItems = [], remoteItems = [], deletedMap = {}) {
@@ -464,7 +496,7 @@ function mergeById(localItems = [], remoteItems = [], deletedMap = {}) {
     }
     merged.set(key, combined);
   });
-  return [...merged.values()];
+  return [...merged.values()].sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
 }
 
 function normalizeEventItem(item, prefix) {
@@ -673,7 +705,7 @@ async function pullRemoteDoc(withEtag = false) {
   console.debug('pullRemoteDoc: fetching', state.sync.endpoint);
   const headers = getSyncHeaders();
   if (withEtag) headers['X-Firebase-ETag'] = 'true';
-  const response = await fetch(state.sync.endpoint, {
+  const response = await fetchWithSyncTimeout(state.sync.endpoint, {
     method: 'GET',
     cache: 'no-store',
     headers
@@ -699,7 +731,7 @@ async function pushRemoteDoc(doc, etag = null) {
       console.debug(`pushRemoteDoc: attempt ${attempt} to ${state.sync.endpoint}`);
       const headers = getSyncHeaders();
       if (etag) headers['if-match'] = etag;
-      const response = await fetch(state.sync.endpoint, {
+      const response = await fetchWithSyncTimeout(state.sync.endpoint, {
         method: 'PUT',
         headers,
         body
@@ -812,10 +844,16 @@ function getSyncV2Url(section) {
 function getSyncDeviceId() {
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
   if (!state.syncMeta.deviceId) {
-    const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    state.syncMeta.deviceId = `device-${randomPart}`;
+    const storedDeviceId = localStorage.getItem(SYNC_DEVICE_STORAGE_KEY);
+    if (storedDeviceId) {
+      state.syncMeta.deviceId = storedDeviceId;
+    } else {
+      const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      state.syncMeta.deviceId = `device-${randomPart}`;
+      localStorage.setItem(SYNC_DEVICE_STORAGE_KEY, state.syncMeta.deviceId);
+    }
   }
   return state.syncMeta.deviceId;
 }
@@ -827,13 +865,17 @@ function getSyncV2UpdateDocs(payload) {
   Object.values(payload).forEach(value => {
     if (value?.data && value?.meta) docs.push(value);
   });
-  return docs;
+  return docs.sort((left, right) => {
+    const timeDifference = (Number(left.updatedAt) || 0) - (Number(right.updatedAt) || 0);
+    if (timeDifference) return timeDifference;
+    return JSON.stringify(left).localeCompare(JSON.stringify(right));
+  });
 }
 
 async function fetchSyncJson(url, withEtag = false) {
   const headers = getSyncHeaders();
   if (withEtag) headers['X-Firebase-ETag'] = 'true';
-  const response = await fetch(url, { method: 'GET', cache: 'no-store', headers });
+  const response = await fetchWithSyncTimeout(url, { method: 'GET', cache: 'no-store', headers });
   if (response.status === 404) return { doc: null, etag: null };
   if (!response.ok) throw new Error(`GET ${response.status}`);
   return { doc: await response.json(), etag: response.headers.get('etag') };
@@ -842,7 +884,7 @@ async function fetchSyncJson(url, withEtag = false) {
 async function putSyncJson(url, doc, etag = null) {
   const headers = getSyncHeaders();
   if (etag) headers['if-match'] = etag;
-  const response = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(doc) });
+  const response = await fetchWithSyncTimeout(url, { method: 'PUT', headers, body: JSON.stringify(doc) });
   if (response.status === 412) return false;
   if (!response.ok) throw new Error(`PUT ${response.status}`);
   return true;
@@ -928,11 +970,13 @@ async function syncNow(showFeedback = false) {
     }
     state.syncMeta.lastSyncedAt = Date.now();
     saveState({ skipTouch: true, skipSync: true });
+    resetSyncRetry();
     renderApp();
     const timeLabel = new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR');
     setSyncStatus(`Synchronisé (${timeLabel}).`);
     return true;
   } catch (error) {
+    scheduleSyncRetry();
     setSyncStatus(`Erreur sync: ${error.message}`);
     return false;
   } finally {
@@ -960,7 +1004,7 @@ function startSyncPolling() {
     syncPollInterval = null;
     return;
   }
-  const intervalMs = document.hidden ? 10000 : 2500;
+  const intervalMs = document.hidden ? 15000 : 4000;
   syncPollInterval = setInterval(() => {
     syncNow(false);
   }, intervalMs);
@@ -2431,15 +2475,20 @@ function gradeReviewAnswer(selectedMastery) {
   const card = reviewQueue[reviewIndex];
   const original = findFlashcardById(card.id)?.card || card;
   if (!original.reviews) original.reviews = [];
+  const reviewTimestamp = new Date().toISOString();
   original.reviews.push({
+    id: createEventId('review'),
     date: getToday(),
-    mastery: selectedMastery
+    mastery: selectedMastery,
+    createdAt: reviewTimestamp,
+    updatedAt: reviewTimestamp
   });
   setFlashcardMastery(original, selectedMastery);
   if (reviewSessionMode === 'other-unseen') {
     if (!original.seenBy) original.seenBy = [];
     if (!original.seenBy.includes(state.currentUser)) original.seenBy.push(state.currentUser);
   }
+  original.updatedAt = reviewTimestamp;
   Object.assign(card, normalizeFlashcard(original));
   if (selectedMastery === 'maitrise') reviewCorrect += 1;
   reviewIndex += 1;
@@ -2456,7 +2505,10 @@ function finishReviewSession() {
       const original = findFlashcardById(card.id)?.card;
       if (!original) return;
       if (!original.seenBy) original.seenBy = [];
-      if (!original.seenBy.includes(state.currentUser)) original.seenBy.push(state.currentUser);
+      if (!original.seenBy.includes(state.currentUser)) {
+        original.seenBy.push(state.currentUser);
+        original.updatedAt = new Date().toISOString();
+      }
     });
   }
   const mastered = reviewCorrect;
