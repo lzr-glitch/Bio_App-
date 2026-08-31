@@ -808,6 +808,27 @@ function getSyncV2Url(section) {
   return `${getSyncV2BaseUrl()}/${section}.json`;
 }
 
+function getSyncDeviceId() {
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
+  if (!state.syncMeta.deviceId) {
+    const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    state.syncMeta.deviceId = `device-${randomPart}`;
+  }
+  return state.syncMeta.deviceId;
+}
+
+function getSyncV2UpdateDocs(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+  const docs = [];
+  if (payload.data && payload.meta) docs.push(payload);
+  Object.values(payload).forEach(value => {
+    if (value?.data && value?.meta) docs.push(value);
+  });
+  return docs;
+}
+
 async function fetchSyncJson(url, withEtag = false) {
   const headers = getSyncHeaders();
   if (withEtag) headers['X-Firebase-ETag'] = 'true';
@@ -841,14 +862,14 @@ async function loadSyncV2() {
     migrated = true;
   }
   let merged = sanitizeSyncDoc(commonDoc) || buildSyncDocument();
-  [updateG.doc, updateR.doc].forEach(update => {
+  [...getSyncV2UpdateDocs(updateG.doc), ...getSyncV2UpdateDocs(updateR.doc)].forEach(update => {
     if (update) merged = mergeSyncDocs(merged, update);
   });
   return { doc: merged, migrated };
 }
 
 async function saveSyncV2Update(userId, doc) {
-  const url = getSyncV2Url(`updates/${userId}`);
+  const url = getSyncV2Url(`updates/${userId}/${getSyncDeviceId()}`);
   let candidate = doc;
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const remote = await fetchSyncJson(url, true);
