@@ -853,6 +853,9 @@ async function saveSyncV2Update(userId, doc) {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const remote = await fetchSyncJson(url, true);
     candidate = remote.doc ? mergeSyncDocs(candidate, remote.doc) : candidate;
+    if (remote.doc && getComparableSyncDoc(candidate) === getComparableSyncDoc(remote.doc)) {
+      return remote.doc;
+    }
     if (await putSyncJson(url, candidate, remote.etag)) return candidate;
     await new Promise(resolve => setTimeout(resolve, 100 + Math.floor(Math.random() * 200)));
   }
@@ -884,12 +887,13 @@ async function syncNow(showFeedback = false) {
     if (resetFromRemote) {
       applySyncDoc(remote.doc);
       if (state.syncMeta) delete state.syncMeta.pendingUpdateAt;
-    } else if (pendingUpdateAt || remote.migrated) {
-      mergedDoc = await saveSyncV2Update(state.currentUser, mergedDoc);
-      applySyncDoc(mergedDoc);
-      if (state.syncMeta?.pendingUpdateAt === pendingUpdateAt) delete state.syncMeta.pendingUpdateAt;
     } else {
       applySyncDoc(mergedDoc);
+      if (pendingUpdateAt || remote.migrated) {
+        mergedDoc = await saveSyncV2Update(state.currentUser, mergedDoc);
+        applySyncDoc(mergedDoc);
+        if (state.syncMeta?.pendingUpdateAt === pendingUpdateAt) delete state.syncMeta.pendingUpdateAt;
+      }
     }
     state.syncMeta.lastSyncedAt = Date.now();
     saveState({ skipTouch: true, skipSync: true });
