@@ -657,15 +657,17 @@ function applySyncDoc(doc) {
   state.syncMeta.resetEpoch = safe.meta.resetEpoch || 0;
 }
 
-async function pullRemoteDoc() {
+async function pullRemoteDoc(withEtag = false) {
   console.debug('pullRemoteDoc: fetching', state.sync.endpoint);
+  const headers = getSyncHeaders();
+  if (withEtag) headers['X-Firebase-ETag'] = 'true';
   const response = await fetch(state.sync.endpoint, {
     method: 'GET',
     cache: 'no-store',
-    headers: getSyncHeaders()
+    headers
   });
   console.debug('pullRemoteDoc: response status', response.status, response.statusText);
-  if (response.status === 404) return null;
+  if (response.status === 404) return withEtag ? { doc: null, etag: null } : null;
   if (!response.ok) throw new Error(`GET ${response.status}`);
   const contentType = response.headers.get('content-type') || '';
   console.debug('pullRemoteDoc: content-type', contentType);
@@ -673,22 +675,27 @@ async function pullRemoteDoc() {
     throw new Error('Endpoint sync invalide: réponse non JSON');
   }
   const json = await response.json();
-  if (json?.data && json?.meta) return json;
-  if (json?.state && json?.meta) return json.state;
-  return json;
+  const doc = json?.data && json?.meta ? json : json?.state && json?.meta ? json.state : json;
+  return withEtag ? { doc, etag: response.headers.get('etag') } : doc;
 }
 
-async function pushRemoteDoc(doc) {
+async function pushRemoteDoc(doc, etag = null) {
   const maxAttempts = 3;
   const body = JSON.stringify(doc);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       console.debug(`pushRemoteDoc: attempt ${attempt} to ${state.sync.endpoint}`);
+      const headers = getSyncHeaders();
+      if (etag) headers['if-match'] = etag;
       const response = await fetch(state.sync.endpoint, {
         method: 'PUT',
-        headers: getSyncHeaders(),
+        headers,
         body
       });
+      if (response.status === 412) {
+        console.debug('pushRemoteDoc: concurrent remote change detected');
+        return { conflict: true };
+      }
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         const errMsg = `PUT ${response.status} ${response.statusText} ${text}`;
@@ -699,7 +706,7 @@ async function pushRemoteDoc(doc) {
         continue;
       }
       console.debug(`pushRemoteDoc: success on attempt ${attempt}`);
-      return true;
+      return { conflict: false };
     } catch (err) {
       console.warn(`pushRemoteDoc: network/exception on attempt ${attempt}:`, err);
       if (attempt === maxAttempts) throw err;
@@ -725,21 +732,30 @@ async function syncNow(showFeedback = false) {
   syncRequestedWhileBusy = false;
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
-    const localDoc = buildSyncDocument();
-    console.debug('syncNow: localDoc.meta', localDoc.meta, 'localDoc.updatedAt', localDoc.updatedAt);
-    const remoteDoc = await pullRemoteDoc();
-    console.debug('syncNow: remoteDoc.meta', remoteDoc?.meta, 'remoteDoc.updatedAt', remoteDoc?.updatedAt);
-    const mergedDoc = mergeSyncDocs(localDoc, remoteDoc);
-    console.debug('syncNow: mergedDoc.meta', mergedDoc.meta, 'mergedDoc.updatedAt', mergedDoc.updatedAt);
-    applySyncDoc(mergedDoc);
-    try {
-      await pushRemoteDoc(mergedDoc);
-      console.debug('syncNow: pushRemoteDoc completed');
-    } catch (pushErr) {
-      console.error('syncNow: pushRemoteDoc failed after retries', pushErr);
-      // keep going: we already applied remote -> local merge; surface error
-      throw pushErr;
+    const maxMergeAttempts = 6;
+    let mergedDoc = null;
+    let synced = false;
+    for (let attempt = 1; attempt <= maxMergeAttempts; attempt += 1) {
+      const localDoc = buildSyncDocument();
+      const remote = await pullRemoteDoc(true);
+      console.debug('syncNow: remoteDoc.meta', remote.doc?.meta, 'remoteDoc.updatedAt', remote.doc?.updatedAt);
+      mergedDoc = mergeSyncDocs(localDoc, remote.doc);
+      console.debug('syncNow: mergedDoc.meta', mergedDoc.meta, 'mergedDoc.updatedAt', mergedDoc.updatedAt);
+      if (remote.doc && getComparableSyncDoc(mergedDoc) === getComparableSyncDoc(remote.doc)) {
+        synced = true;
+        break;
+      }
+      const result = await pushRemoteDoc(mergedDoc, remote.etag);
+      if (!result.conflict) {
+        synced = true;
+        break;
+      }
+      console.debug(`syncNow: retrying merge after concurrent update (${attempt}/${maxMergeAttempts})`);
     }
+    if (!synced || !mergedDoc) {
+      throw new Error('conflit de synchronisation persistant, réessaie dans un instant');
+    }
+    applySyncDoc(mergedDoc);
     state.syncMeta.lastSyncedAt = Date.now();
     saveState({ skipTouch: true, skipSync: true });
     try {
@@ -2726,21 +2742,35 @@ async function resetLocalData() {
 
 async function resetGlobalData() {
   if (!confirm('Réinitialiser toutes les données sur tous les appareils synchronisés ?')) return;
-  const resetEpoch = Date.now();
-  const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
-  replaceState(nextState);
-  saveState({ skipTouch: true, skipSync: true });
-  renderApp();
-  if (isSyncConfigured() && navigator.onLine) {
-    const synced = await syncNow(true);
-    if (synced) {
-      setSyncStatus('Réinitialisation globale envoyée.');
-    }
-  } else {
-    setSyncStatus('Réinitialisation globale enregistrée. Elle sera envoyée dès que la sync sera active.');
-    saveState({ skipTouch: true });
+  if (!isSyncConfigured() || !navigator.onLine) {
+    setSyncStatus('Impossible de réinitialiser partout : connecte cet appareil et active la sync.');
+    return;
   }
-  window.location.reload();
+  setSyncStatus('Réinitialisation globale en cours...');
+  try {
+    const maxAttempts = 6;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const remote = await pullRemoteDoc(true);
+      const remoteEpoch = Number(remote.doc?.meta?.resetEpoch) || 0;
+      const localEpoch = Number(state.syncMeta?.resetEpoch) || 0;
+      const resetEpoch = Math.max(Date.now(), remoteEpoch + 1, localEpoch + 1);
+      const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
+      replaceState(nextState);
+      const resetDoc = buildSyncDocument();
+      const result = await pushRemoteDoc(resetDoc, remote.etag);
+      if (result.conflict) continue;
+      applySyncDoc(resetDoc);
+      state.syncMeta.lastSyncedAt = Date.now();
+      saveState({ skipTouch: true, skipSync: true });
+      renderApp();
+      setSyncStatus('Réinitialisation globale confirmée.');
+      window.location.reload();
+      return;
+    }
+    throw new Error('conflit de synchronisation persistant');
+  } catch (error) {
+    setSyncStatus(`Erreur reset global: ${error.message}`);
+  }
 }
 
 function attachHandlers() {
