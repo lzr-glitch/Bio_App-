@@ -278,6 +278,7 @@ function saveState(options = {}) {
   if (!options.skipSync && state.currentUser) {
     if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
     state.syncMeta.pendingUpdateAt = Date.now();
+    state.syncMeta.localRevision = (Number(state.syncMeta.localRevision) || 0) + 1;
   }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -901,10 +902,15 @@ async function syncNow(showFeedback = false) {
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
     const pendingUpdateAt = Number(state.syncMeta?.pendingUpdateAt) || 0;
+    const localRevision = Number(state.syncMeta?.localRevision) || 0;
     const localDoc = buildSyncDocument();
     const remote = await loadSyncV2();
     let mergedDoc = mergeSyncDocs(localDoc, remote.doc);
     const resetFromRemote = (remote.doc.meta?.resetEpoch || 0) > (localDoc.meta?.resetEpoch || 0);
+    if (!resetFromRemote && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
+      syncRequestedWhileBusy = true;
+      return false;
+    }
     if (resetFromRemote) {
       applySyncDoc(remote.doc);
       if (state.syncMeta) delete state.syncMeta.pendingUpdateAt;
@@ -912,6 +918,10 @@ async function syncNow(showFeedback = false) {
       applySyncDoc(mergedDoc);
       if (pendingUpdateAt || remote.migrated) {
         mergedDoc = await saveSyncV2Update(state.currentUser, mergedDoc);
+        if ((Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
+          syncRequestedWhileBusy = true;
+          return false;
+        }
         applySyncDoc(mergedDoc);
         if (state.syncMeta?.pendingUpdateAt === pendingUpdateAt) delete state.syncMeta.pendingUpdateAt;
       }
