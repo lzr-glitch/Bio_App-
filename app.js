@@ -387,6 +387,7 @@ function markDeleted(type, id) {
 
 function buildSyncDocument() {
   return {
+    syncSchema: 2,
     version: 1,
     updatedAt: Date.now(),
     meta: {
@@ -415,6 +416,7 @@ function buildSyncDocument() {
 function sanitizeSyncDoc(doc) {
   if (!doc || typeof doc !== 'object') return null;
   const safe = {
+    syncSchema: Number(doc.syncSchema) || 0,
     version: Number(doc.version) || 1,
     updatedAt: Number(doc.updatedAt) || 0,
     meta: {
@@ -730,7 +732,7 @@ async function pushRemoteDoc(doc, etag = null) {
     try {
       console.debug(`pushRemoteDoc: attempt ${attempt} to ${state.sync.endpoint}`);
       const headers = getSyncHeaders();
-      if (etag) headers['if-match'] = etag;
+      headers['if-match'] = etag || 'null_etag';
       const response = await fetchWithSyncTimeout(state.sync.endpoint, {
         method: 'PUT',
         headers,
@@ -1079,6 +1081,127 @@ function startSyncRealtime() {
     });
   } catch (error) {
     console.warn('Could not start realtime sync stream', error);
+  }
+}
+
+function isCommonSyncDoc(doc) {
+  return Number(doc?.syncSchema) === 2;
+}
+
+async function readLegacyV2Doc() {
+  try {
+    const [common, updateG, updateR] = await Promise.all([
+      fetchSyncJson(getSyncV2Url('common')),
+      fetchSyncJson(getSyncV2Url('updates/G')),
+      fetchSyncJson(getSyncV2Url('updates/R'))
+    ]);
+    let merged = common.doc ? sanitizeSyncDoc(common.doc) : null;
+    [...getSyncV2UpdateDocs(updateG.doc), ...getSyncV2UpdateDocs(updateR.doc)].forEach(update => {
+      merged = merged ? mergeSyncDocs(merged, update) : sanitizeSyncDoc(update);
+    });
+    return merged;
+  } catch (error) {
+    console.warn('Impossible de lire les anciennes données sync-v2', error);
+    return null;
+  }
+}
+
+async function clearLegacyV2Data() {
+  try {
+    await Promise.all([
+      putSyncJson(getSyncV2Url('common'), null),
+      putSyncJson(getSyncV2Url('updates/G'), null),
+      putSyncJson(getSyncV2Url('updates/R'), null)
+    ]);
+  } catch (error) {
+    console.warn('Impossible de nettoyer les anciennes données sync-v2', error);
+  }
+}
+
+async function readCanonicalRemote() {
+  const root = await pullRemoteDoc(true);
+  if (isCommonSyncDoc(root.doc)) {
+    return { doc: sanitizeSyncDoc(root.doc), etag: root.etag, needsMigration: false };
+  }
+  let migrated = root.doc ? sanitizeSyncDoc(root.doc) : null;
+  const legacyV2 = await readLegacyV2Doc();
+  if (legacyV2) migrated = migrated ? mergeSyncDocs(migrated, legacyV2) : legacyV2;
+  if (!migrated) migrated = buildSyncDocument();
+  migrated.syncSchema = 2;
+  return { doc: migrated, etag: root.etag, needsMigration: true };
+}
+
+async function syncNow(showFeedback = false) {
+  if (!isSyncConfigured()) {
+    if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
+    return false;
+  }
+  if (!navigator.onLine) {
+    if (showFeedback) setSyncStatus('Hors ligne, dernière copie affichée.');
+    return false;
+  }
+  if (syncInFlight) {
+    syncRequestedWhileBusy = true;
+    return false;
+  }
+  syncInFlight = true;
+  syncRequestedWhileBusy = false;
+  if (showFeedback) setSyncStatus('Synchronisation en cours...');
+  try {
+    const maxAttempts = 8;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const pendingUpdateAt = Number(state.syncMeta?.pendingUpdateAt) || 0;
+      const localRevision = Number(state.syncMeta?.localRevision) || 0;
+      const localDoc = buildSyncDocument();
+      const remote = await readCanonicalRemote();
+      const remoteResetWins = (remote.doc.meta?.resetEpoch || 0) > (localDoc.meta?.resetEpoch || 0);
+      if (!remoteResetWins && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
+        syncRequestedWhileBusy = true;
+        return false;
+      }
+
+      let targetDoc = remote.doc;
+      if (!remoteResetWins && pendingUpdateAt) {
+        targetDoc = mergeSyncDocs(localDoc, remote.doc);
+      }
+      targetDoc.syncSchema = 2;
+
+      const needsWrite = remote.needsMigration || (!remoteResetWins && pendingUpdateAt && getComparableSyncDoc(targetDoc) !== getComparableSyncDoc(remote.doc));
+      if (needsWrite) {
+        const result = await pushRemoteDoc(targetDoc, remote.etag);
+        if (result.conflict) {
+          await new Promise(resolve => setTimeout(resolve, 100 + Math.floor(Math.random() * 250)));
+          continue;
+        }
+        if (remote.needsMigration) clearLegacyV2Data();
+      }
+
+      if (!remoteResetWins && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
+        syncRequestedWhileBusy = true;
+        return false;
+      }
+      applySyncDoc(targetDoc);
+      if (remoteResetWins || state.syncMeta?.pendingUpdateAt === pendingUpdateAt) {
+        delete state.syncMeta.pendingUpdateAt;
+      }
+      state.syncMeta.lastSyncedAt = Date.now();
+      saveState({ skipTouch: true, skipSync: true });
+      resetSyncRetry();
+      renderApp();
+      setSyncStatus(`Synchronisé (${new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR')}).`);
+      return true;
+    }
+    throw new Error('conflit de synchronisation persistant');
+  } catch (error) {
+    scheduleSyncRetry();
+    setSyncStatus(`Erreur sync: ${error.message}`);
+    return false;
+  } finally {
+    syncInFlight = false;
+    if (syncRequestedWhileBusy && isSyncConfigured() && navigator.onLine) {
+      syncRequestedWhileBusy = false;
+      setTimeout(() => syncNow(false), 150);
+    }
   }
 }
 
@@ -2961,18 +3084,17 @@ async function resetGlobalData() {
   try {
     const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const remote = await fetchSyncJson(getSyncV2Url('common'), true);
+      const remote = await pullRemoteDoc(true);
       const remoteEpoch = Number(remote.doc?.meta?.resetEpoch) || 0;
       const localEpoch = Number(state.syncMeta?.resetEpoch) || 0;
       const resetEpoch = Math.max(Date.now(), remoteEpoch + 1, localEpoch + 1);
       const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
       replaceState(nextState);
       const resetDoc = buildSyncDocument();
-      if (!await putSyncJson(getSyncV2Url('common'), resetDoc, remote.etag)) continue;
-      await Promise.all([
-        putSyncJson(getSyncV2Url('updates/G'), null),
-        putSyncJson(getSyncV2Url('updates/R'), null)
-      ]);
+      resetDoc.syncSchema = 2;
+      const result = await pushRemoteDoc(resetDoc, remote.etag);
+      if (result.conflict) continue;
+      clearLegacyV2Data();
       applySyncDoc(resetDoc);
       state.syncMeta.lastSyncedAt = Date.now();
       saveState({ skipTouch: true, skipSync: true });
