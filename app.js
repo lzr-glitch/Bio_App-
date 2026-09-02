@@ -1,4 +1,4 @@
-﻿const STORAGE_KEY = 'revisio-ibo-state';
+const STORAGE_KEY = 'revisio-ibo-state';
 const SYNC_DEVICE_STORAGE_KEY = 'revisio-ibo-sync-device-id';
 const LEGACY_SYNC_ENDPOINT = 'https://lzr-glitch.github.io/Bio_App-/';
 const DEFAULT_SYNC_ENDPOINT = '';
@@ -387,7 +387,7 @@ function markDeleted(type, id) {
 
 function buildSyncDocument() {
   return {
-    syncSchema: 2,
+    syncSchema: 3,
     version: 1,
     updatedAt: Date.now(),
     meta: {
@@ -402,19 +402,22 @@ function buildSyncDocument() {
       },
       deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {} })),
       questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
-      streak: state.streak,
-      pending: state.pending,
-      jokers: state.jokers,
-      dailyThresholds: JSON.parse(JSON.stringify(state.dailyThresholds || { reading: 5, cards: 3, tested: 1 })),
-      dayResetHour: state.dayResetHour,
-      lastUpdate: state.lastUpdate,
-      lastMonth: state.lastMonth
+      _shared: {
+        streak: state.streak,
+        pending: state.pending,
+        jokers: state.jokers,
+        dailyThresholds: JSON.parse(JSON.stringify(state.dailyThresholds || { reading: 5, cards: 3, tested: 1 })),
+        dayResetHour: state.dayResetHour,
+        lastUpdate: state.lastUpdate,
+        lastMonth: state.lastMonth
+      }
     }
   };
 }
 
 function sanitizeSyncDoc(doc) {
   if (!doc || typeof doc !== 'object') return null;
+  const shared = doc.data?._shared && typeof doc.data._shared === 'object' ? doc.data._shared : (doc.data || {});
   const safe = {
     syncSchema: Number(doc.syncSchema) || 0,
     version: Number(doc.version) || 1,
@@ -437,13 +440,15 @@ function sanitizeSyncDoc(doc) {
         questionBank: doc.data?.deleted?.questionBank || {}
       },
       questionBank: Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : [],
-      streak: Number(doc.data?.streak) || 0,
-      pending: Boolean(doc.data?.pending),
-      jokers: Number(doc.data?.jokers) || 0,
-      dailyThresholds: doc.data?.dailyThresholds || { reading: 5, cards: 3, tested: 1 },
-      dayResetHour: Number(doc.data?.dayResetHour ?? 4),
-      lastUpdate: doc.data?.lastUpdate || getToday(),
-      lastMonth: doc.data?.lastMonth || getToday().slice(0, 7)
+      _shared: {
+        streak: Number(shared.streak) || 0,
+        pending: Boolean(shared.pending),
+        jokers: Number(shared.jokers) || 0,
+        dailyThresholds: shared.dailyThresholds || { reading: 5, cards: 3, tested: 1 },
+        dayResetHour: Number(shared.dayResetHour ?? 4),
+        lastUpdate: shared.lastUpdate || getToday(),
+        lastMonth: shared.lastMonth || getToday().slice(0, 7)
+      }
     }
   };
   return safe;
@@ -669,13 +674,7 @@ function mergeSyncDocs(localDoc, remoteDoc) {
   merged.data.questionBank = mergeQuestionBank(local.data.questionBank, remote.data.questionBank, mergedDeleted.questionBank);
 
   if ((remote.meta.globalUpdatedAt || 0) > (local.meta.globalUpdatedAt || 0)) {
-    merged.data.streak = remote.data.streak;
-    merged.data.pending = remote.data.pending;
-    merged.data.jokers = remote.data.jokers;
-    merged.data.dailyThresholds = remote.data.dailyThresholds;
-    merged.data.dayResetHour = remote.data.dayResetHour;
-    merged.data.lastUpdate = remote.data.lastUpdate;
-    merged.data.lastMonth = remote.data.lastMonth;
+    merged.data._shared = remote.data._shared;
     merged.meta.globalUpdatedAt = remote.meta.globalUpdatedAt;
   }
 
@@ -690,13 +689,13 @@ function applySyncDoc(doc) {
   state.users.R = safe.data.users.R;
   state.deleted = safe.data.deleted;
   state.questionBank = safe.data.questionBank;
-  state.streak = safe.data.streak;
-  state.pending = safe.data.pending;
-  state.jokers = safe.data.jokers;
-  state.dailyThresholds = safe.data.dailyThresholds;
-  state.dayResetHour = safe.data.dayResetHour;
-  state.lastUpdate = safe.data.lastUpdate;
-  state.lastMonth = safe.data.lastMonth;
+  state.streak = safe.data._shared.streak;
+  state.pending = safe.data._shared.pending;
+  state.jokers = safe.data._shared.jokers;
+  state.dailyThresholds = safe.data._shared.dailyThresholds;
+  state.dayResetHour = safe.data._shared.dayResetHour;
+  state.lastUpdate = safe.data._shared.lastUpdate;
+  state.lastMonth = safe.data._shared.lastMonth;
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
   state.syncMeta.usersUpdatedAt = safe.meta.usersUpdatedAt;
   state.syncMeta.globalUpdatedAt = safe.meta.globalUpdatedAt;
@@ -1052,10 +1051,74 @@ function handleIncomingRemoteDoc(remoteDoc) {
 
 function startSyncRealtime() {
   stopSyncRealtime();
+  if (!isSyncConfigured() || typeof EventSource === 'undefined' || state.sync?.token) return;
+  try {
+    syncEventSource = new EventSource(state.sync.endpoint);
+    const requestRefresh = () => {
+      if (syncInFlight) {
+        syncRequestedWhileBusy = true;
+        return;
+      }
+      scheduleSync(80);
+    };
+    syncEventSource.addEventListener('put', requestRefresh);
+    syncEventSource.addEventListener('patch', requestRefresh);
+  } catch (error) {
+    console.warn('Impossible de démarrer le flux temps réel Firebase', error);
+  }
 }
 
 function isCommonSyncDoc(doc) {
-  return Number(doc?.syncSchema) === 2;
+  return Number(doc?.syncSchema) === 3;
+}
+
+function getCanonicalNodeUrl(path) {
+  const suffix = String(path).replace(/^\/+|\/+$/g, '').split('/').map(encodeURIComponent).join('/');
+  return state.sync.endpoint.replace(/\/state\.json(?:\?.*)?$/i, `/state/${suffix}.json`);
+}
+
+async function putSyncJsonConditionally(url, doc, etag) {
+  const headers = getSyncHeaders();
+  headers['if-match'] = etag || 'null_etag';
+  const response = await fetchWithSyncTimeout(url, { method: 'PUT', headers, body: JSON.stringify(doc) });
+  if (response.status === 412) return false;
+  if (!response.ok) throw new Error(`PUT ${response.status}`);
+  return true;
+}
+
+async function syncCanonicalBranch(path, localValue, mergeValue) {
+  const url = getCanonicalNodeUrl(path);
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    const remote = await fetchSyncJson(url, true);
+    const next = mergeValue(localValue, remote.doc);
+    if (JSON.stringify(next) === JSON.stringify(remote.doc)) return next;
+    if (await putSyncJsonConditionally(url, next, remote.etag)) return next;
+    await new Promise(resolve => setTimeout(resolve, 80 + Math.floor(Math.random() * 180) + (attempt * 45)));
+  }
+  throw new Error(`écriture concurrente bloquée (${path})`);
+}
+
+async function pushCanonicalBranches(doc) {
+  const target = sanitizeSyncDoc(doc);
+  const deleted = await syncCanonicalBranch('data/deleted', target.data.deleted, (local, remote) => ({
+    flashcards: mergeDeletedMaps(local.flashcards, remote?.flashcards),
+    questionBank: mergeDeletedMaps(local.questionBank, remote?.questionBank)
+  }));
+  const mergeBranchUser = (local, remote) => mergeUsers(local, remote, deleted);
+  await Promise.all([
+    syncCanonicalBranch('data/users/G', target.data.users.G, mergeBranchUser),
+    syncCanonicalBranch('data/users/R', target.data.users.R, mergeBranchUser),
+    syncCanonicalBranch('data/questionBank', target.data.questionBank, (local, remote) => mergeQuestionBank(local, Array.isArray(remote) ? remote : [], deleted.questionBank)),
+    syncCanonicalBranch('data/_shared', target.data._shared, (local, remote) => {
+      const remoteShared = remote && typeof remote === 'object' ? remote : {};
+      return (target.meta.globalUpdatedAt >= Number(remoteShared.updatedAt) || 0) ? { ...local, updatedAt: target.meta.globalUpdatedAt } : remoteShared;
+    }),
+    syncCanonicalBranch('meta/usersUpdatedAt/G', target.meta.usersUpdatedAt.G, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0)),
+    syncCanonicalBranch('meta/usersUpdatedAt/R', target.meta.usersUpdatedAt.R, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0)),
+    syncCanonicalBranch('meta/globalUpdatedAt', target.meta.globalUpdatedAt, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0))
+  ]);
+  const remote = await pullRemoteDoc(true);
+  return sanitizeSyncDoc(remote.doc);
 }
 
 async function readLegacyV2Doc() {
@@ -1097,7 +1160,7 @@ async function readCanonicalRemote() {
   const legacyV2 = await readLegacyV2Doc();
   if (legacyV2) migrated = migrated ? mergeSyncDocs(migrated, legacyV2) : legacyV2;
   if (!migrated) migrated = buildSyncDocument();
-  migrated.syncSchema = 2;
+  migrated.syncSchema = 3;
   return { doc: migrated, etag: root.etag, needsMigration: true };
 }
 
@@ -1134,16 +1197,20 @@ async function syncNow(showFeedback = false) {
       if (!remoteResetWins && pendingUpdateAt) {
         targetDoc = mergeSyncDocs(localDoc, remote.doc);
       }
-      targetDoc.syncSchema = 2;
+      targetDoc.syncSchema = 3;
 
       const needsWrite = remote.needsMigration || (!remoteResetWins && pendingUpdateAt && getComparableSyncDoc(targetDoc) !== getComparableSyncDoc(remote.doc));
       if (needsWrite) {
-        const result = await pushRemoteDoc(targetDoc, remote.etag);
-        if (result.conflict) {
-          await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 420) + (attempt * 80)));
-          continue;
+        if (remote.needsMigration) {
+          const result = await pushRemoteDoc(targetDoc, remote.etag);
+          if (result.conflict) {
+            await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 420) + (attempt * 80)));
+            continue;
+          }
+          clearLegacyV2Data();
+        } else {
+          targetDoc = await pushCanonicalBranches(targetDoc);
         }
-        if (remote.needsMigration) clearLegacyV2Data();
       }
 
       if (!remoteResetWins && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
@@ -2067,7 +2134,7 @@ function renderStats() {
 
   const periods = [
     { title: `Aujourd'hui (${today})`, start: today, end: today },
-    { title: `Depuis lundi (${monday} → ${today})`, start: monday, end: today },
+    { title: `Depuis lundi (${monday} ? ${today})`, start: monday, end: today },
     { title: 'All time', start: null, end: null }
   ];
 
@@ -2189,7 +2256,7 @@ function renderBadges() {
   badges.forEach(badge => {
     const item = document.createElement('div');
     item.className = 'badge-item';
-    item.innerHTML = `<span>${badge.label}</span><strong>${badge.earned ? '🏅' : '🔒'}</strong>`;
+    item.innerHTML = `<span>${badge.label}</span><strong>${badge.earned ? '??' : '??'}</strong>`;
     badgeList.appendChild(item);
   });
 }
@@ -3061,7 +3128,7 @@ async function resetGlobalData() {
       const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
       replaceState(nextState);
       const resetDoc = buildSyncDocument();
-      resetDoc.syncSchema = 2;
+      resetDoc.syncSchema = 3;
       const result = await pushRemoteDoc(resetDoc, remote.etag);
       if (result.conflict) continue;
       clearLegacyV2Data();
