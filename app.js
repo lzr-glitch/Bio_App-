@@ -264,7 +264,7 @@ function deepMerge(base, override) {
   return base;
 }
 
-function touchSyncMeta() {
+function touchSyncMeta(options = {}) {
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
   if (!state.syncMeta.usersUpdatedAt) state.syncMeta.usersUpdatedAt = { G: 0, R: 0 };
   if (!Number.isFinite(state.syncMeta.resetEpoch)) state.syncMeta.resetEpoch = 0;
@@ -272,12 +272,12 @@ function touchSyncMeta() {
   if (state.currentUser && state.syncMeta.usersUpdatedAt[state.currentUser] != null) {
     state.syncMeta.usersUpdatedAt[state.currentUser] = now;
   }
-  state.syncMeta.globalUpdatedAt = now;
+  if (options.shared) state.syncMeta.globalUpdatedAt = now;
 }
 
 function saveState(options = {}) {
   if (!options.skipTouch) {
-    touchSyncMeta();
+    touchSyncMeta({ shared: Boolean(options.shared) });
   }
   if (!options.skipSync && state.currentUser) {
     if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 };
@@ -928,7 +928,7 @@ async function saveSyncV2Update(userId, doc) {
   throw new Error('mise à jour du profil en attente');
 }
 
-async function syncNow(showFeedback = false) {
+async function syncNowV2Legacy(showFeedback = false) {
   if (!isSyncConfigured()) {
     if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
     return false;
@@ -1052,36 +1052,6 @@ function handleIncomingRemoteDoc(remoteDoc) {
 
 function startSyncRealtime() {
   stopSyncRealtime();
-  return;
-  if (!isSyncConfigured()) return;
-  if (typeof EventSource === 'undefined') return;
-  if (state.sync?.token) return;
-  try {
-    syncEventSource = new EventSource(state.sync.endpoint, { withCredentials: false });
-    const handleEvent = (event) => {
-      try {
-        const payload = JSON.parse(event.data || 'null');
-        if (!payload || payload.data == null) return;
-        const nextDoc = payload.path === '/' ? payload.data : null;
-        if (!nextDoc) return;
-        handleIncomingRemoteDoc(nextDoc);
-      } catch (error) {
-        console.warn('sync stream parse failed', error);
-      }
-    };
-    syncEventSource.addEventListener('put', handleEvent);
-    syncEventSource.addEventListener('patch', async () => {
-      await syncNow(false);
-    });
-    syncEventSource.addEventListener('error', () => {
-      stopSyncRealtime();
-      setTimeout(() => {
-        if (isSyncConfigured()) startSyncRealtime();
-      }, 3000);
-    });
-  } catch (error) {
-    console.warn('Could not start realtime sync stream', error);
-  }
 }
 
 function isCommonSyncDoc(doc) {
@@ -1148,7 +1118,7 @@ async function syncNow(showFeedback = false) {
   syncRequestedWhileBusy = false;
   if (showFeedback) setSyncStatus('Synchronisation en cours...');
   try {
-    const maxAttempts = 8;
+    const maxAttempts = 16;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const pendingUpdateAt = Number(state.syncMeta?.pendingUpdateAt) || 0;
       const localRevision = Number(state.syncMeta?.localRevision) || 0;
@@ -1170,7 +1140,7 @@ async function syncNow(showFeedback = false) {
       if (needsWrite) {
         const result = await pushRemoteDoc(targetDoc, remote.etag);
         if (result.conflict) {
-          await new Promise(resolve => setTimeout(resolve, 100 + Math.floor(Math.random() * 250)));
+          await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 420) + (attempt * 80)));
           continue;
         }
         if (remote.needsMigration) clearLegacyV2Data();
@@ -1191,7 +1161,7 @@ async function syncNow(showFeedback = false) {
       setSyncStatus(`Synchronisé (${new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR')}).`);
       return true;
     }
-    throw new Error('conflit de synchronisation persistant');
+    throw new Error('synchronisation occupée, nouvel essai automatique en cours');
   } catch (error) {
     scheduleSyncRetry();
     setSyncStatus(`Erreur sync: ${error.message}`);
@@ -1301,7 +1271,7 @@ function checkDayTransition() {
       state.pending = false;
     }
     state.lastUpdate = getToday();
-    saveState();
+    saveState({ shared: true });
   }
 }
 
@@ -1310,7 +1280,7 @@ function checkMonthTransition() {
   if (state.lastMonth !== currentMonth) {
     processMonthlyEnd(state.lastMonth);
     state.lastMonth = currentMonth;
-    saveState();
+    saveState({ shared: true });
   }
 }
 
@@ -1925,7 +1895,7 @@ function populateAdminInputs() {
 function saveAdminChanges() {
   if (state.currentUser !== 'R') return;
   state.jokers = Math.max(0, Number(adminStreakJokers?.value) || 0);
-  saveState();
+  saveState({ shared: true });
   renderApp();
   showAdminFeedback(`Jokers de streak mis à jour : ${state.jokers}`);
 }
