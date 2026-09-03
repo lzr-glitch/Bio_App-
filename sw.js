@@ -1,4 +1,4 @@
-const CACHE_NAME = 'revisio-ibo-cache-v18';
+const CACHE_NAME = 'revisio-ibo-cache-v19';
 const ASSETS = [
   '.',
   'index.html',

@@ -403,6 +403,7 @@ function buildSyncDocument() {
       deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {} })),
       questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
       _shared: {
+        updatedAt: Number(state.syncMeta?.globalUpdatedAt) || 0,
         streak: state.streak,
         pending: state.pending,
         jokers: state.jokers,
@@ -441,6 +442,7 @@ function sanitizeSyncDoc(doc) {
       },
       questionBank: Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : [],
       _shared: {
+        updatedAt: Number(shared.updatedAt) || Number(doc.meta?.globalUpdatedAt) || 0,
         streak: Number(shared.streak) || 0,
         pending: Boolean(shared.pending),
         jokers: Number(shared.jokers) || 0,
@@ -673,10 +675,10 @@ function mergeSyncDocs(localDoc, remoteDoc) {
   merged.data.deleted = mergedDeleted;
   merged.data.questionBank = mergeQuestionBank(local.data.questionBank, remote.data.questionBank, mergedDeleted.questionBank);
 
-  if ((remote.meta.globalUpdatedAt || 0) > (local.meta.globalUpdatedAt || 0)) {
+  if ((remote.data._shared.updatedAt || 0) > (local.data._shared.updatedAt || 0)) {
     merged.data._shared = remote.data._shared;
-    merged.meta.globalUpdatedAt = remote.meta.globalUpdatedAt;
   }
+  merged.meta.globalUpdatedAt = Math.max(local.meta.globalUpdatedAt || 0, remote.meta.globalUpdatedAt || 0, merged.data._shared.updatedAt || 0);
 
   merged.updatedAt = Date.now();
   return merged;
@@ -1088,12 +1090,12 @@ async function putSyncJsonConditionally(url, doc, etag) {
 
 async function syncCanonicalBranch(path, localValue, mergeValue) {
   const url = getCanonicalNodeUrl(path);
-  for (let attempt = 1; attempt <= 12; attempt += 1) {
+  for (let attempt = 1; attempt <= 50; attempt += 1) {
     const remote = await fetchSyncJson(url, true);
     const next = mergeValue(localValue, remote.doc);
     if (JSON.stringify(next) === JSON.stringify(remote.doc)) return next;
     if (await putSyncJsonConditionally(url, next, remote.etag)) return next;
-    await new Promise(resolve => setTimeout(resolve, 80 + Math.floor(Math.random() * 180) + (attempt * 45)));
+    await new Promise(resolve => setTimeout(resolve, Math.min(2500, 80 + Math.floor(Math.random() * 180) + (attempt * 45))));
   }
   throw new Error(`écriture concurrente bloquée (${path})`);
 }
@@ -1111,11 +1113,8 @@ async function pushCanonicalBranches(doc) {
     syncCanonicalBranch('data/questionBank', target.data.questionBank, (local, remote) => mergeQuestionBank(local, Array.isArray(remote) ? remote : [], deleted.questionBank)),
     syncCanonicalBranch('data/_shared', target.data._shared, (local, remote) => {
       const remoteShared = remote && typeof remote === 'object' ? remote : {};
-      return (target.meta.globalUpdatedAt >= Number(remoteShared.updatedAt) || 0) ? { ...local, updatedAt: target.meta.globalUpdatedAt } : remoteShared;
-    }),
-    syncCanonicalBranch('meta/usersUpdatedAt/G', target.meta.usersUpdatedAt.G, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0)),
-    syncCanonicalBranch('meta/usersUpdatedAt/R', target.meta.usersUpdatedAt.R, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0)),
-    syncCanonicalBranch('meta/globalUpdatedAt', target.meta.globalUpdatedAt, (local, remote) => Math.max(Number(local) || 0, Number(remote) || 0))
+      return (Number(local.updatedAt) || 0) >= (Number(remoteShared.updatedAt) || 0) ? local : remoteShared;
+    })
   ]);
   const remote = await pullRemoteDoc(true);
   return sanitizeSyncDoc(remote.doc);
