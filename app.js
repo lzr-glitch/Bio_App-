@@ -2,6 +2,21 @@ const STORAGE_KEY = 'revisio-ibo-state';
 const SYNC_DEVICE_STORAGE_KEY = 'revisio-ibo-sync-device-id';
 const LEGACY_SYNC_ENDPOINT = 'https://lzr-glitch.github.io/Bio_App-/';
 const DEFAULT_SYNC_ENDPOINT = '';
+const FIREBASE_SDK_VERSION = '12.18.0';
+const FIREBASE_CONFIG = Object.freeze({
+  apiKey: 'AIzaSyDzac4yOPOK5A1APSllZRfjvtq7B76vEWM',
+  authDomain: 'bio-app-sync.firebaseapp.com',
+  databaseURL: 'https://bio-app-sync-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'bio-app-sync',
+  storageBucket: 'bio-app-sync.firebasestorage.app',
+  messagingSenderId: '625519492146',
+  appId: '1:625519492146:web:feb0005eb31b3ae409902b'
+});
+const FIREBASE_V5_PATH = 'bio-app/realtime-v5';
+const FIREBASE_LEGACY_STATE_URL = `${FIREBASE_CONFIG.databaseURL}/bio-app/state.json`;
+const V5_OUTBOX_BACKUP_KEY = 'revisio-ibo-v5-outbox';
+const V5_OUTBOX_DB_NAME = 'revisio-ibo-v5-sync';
+const V5_OUTBOX_STORE = 'outbox';
 const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
@@ -16,7 +31,7 @@ const defaultState = {
   streak: 0,
   pending: false,
   theme: 'dark',
-  sync: { enabled: false, endpoint: '', token: '' },
+  sync: { enabled: true, endpoint: FIREBASE_CONFIG.databaseURL, token: '' },
   syncMeta: { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0, resetEpoch: 0 },
   dayResetHour: 4,
   lastUpdate: getDayKeyFor(),
@@ -231,6 +246,26 @@ let lastRemoteDocUpdatedAt = 0;
 let syncRetryTimeout = null;
 let syncFailureCount = 0;
 const SYNC_REQUEST_TIMEOUT_MS = 8000;
+const firebaseV5 = {
+  started: false,
+  starting: null,
+  database: null,
+  rootRef: null,
+  modules: null,
+  unsubscribe: null,
+  connectionUnsubscribe: null,
+  connected: false,
+  seeding: null,
+  remoteDoc: null,
+  effectiveDoc: null,
+  outbox: new Map(),
+  outboxReady: null,
+  flushTimer: null,
+  flushing: false,
+  remoteQueue: Promise.resolve(),
+  calendarChecked: false,
+  status: 'Initialisation de Firebase…'
+};
 
 function createEventId(prefix) {
   return `${prefix}-${state.currentUser || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -290,8 +325,13 @@ function saveState(options = {}) {
     console.warn('saveState: localStorage.setItem failed', e);
   }
   if (!options.skipSync) {
-    console.debug('saveState: scheduling sync');
-    scheduleSync();
+    if (isFirebaseV5Enabled()) {
+      queueV5CurrentState();
+      scheduleFirebaseV5Sync();
+    } else {
+      console.debug('saveState: scheduling sync');
+      scheduleSync();
+    }
   }
 }
 
@@ -316,7 +356,12 @@ function escapeHtml(value) {
 }
 
 function isSyncConfigured() {
+  if (isFirebaseV5Enabled()) return true;
   return Boolean(state.sync?.enabled && state.sync?.endpoint);
+}
+
+function isFirebaseV5Enabled() {
+  return true;
 }
 
 function normalizeSyncEndpoint(rawValue) {
@@ -725,6 +770,679 @@ function applySyncDoc(doc) {
   state.syncMeta.resetEpoch = safe.meta.resetEpoch || 0;
 }
 
+function cloneV5Value(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isV5Record(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getV5ItemId(item, prefix, index) {
+  if (item?.id) return String(item.id);
+  const stamp = item?.createdAt || item?.updatedAt || item?.date || item?.question || item?.title || index;
+  return `${prefix}-legacy-${String(stamp)}`;
+}
+
+function getV5MapKey(item, prefix, index, usedKeys) {
+  const base = `${prefix}-${getV5ItemId(item, prefix, index)}`.replace(/[.#$/\[\]]/g, '_');
+  let key = base || `${prefix}-${index}`;
+  let suffix = 1;
+  while (usedKeys.has(key)) {
+    key = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedKeys.add(key);
+  return key;
+}
+
+function v5CollectionToMap(items, prefix, transform = value => value) {
+  const source = Array.isArray(items) ? items : Object.values(items || {});
+  const result = {};
+  const usedKeys = new Set();
+  source.forEach((rawItem, index) => {
+    if (!rawItem || typeof rawItem !== 'object') return;
+    const item = cloneV5Value(rawItem);
+    if (!item.id) item.id = getV5ItemId(item, prefix, index);
+    const key = getV5MapKey(item, prefix, index, usedKeys);
+    result[key] = transform(item, index);
+  });
+  return result;
+}
+
+function v5MapToCollection(value, prefix, transform = item => item) {
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [String(index), item])
+    : Object.entries(value || {});
+  return entries
+    .map(([key, rawItem], index) => {
+      if (!rawItem || typeof rawItem !== 'object') return null;
+      const item = cloneV5Value(rawItem);
+      if (!item.id) item.id = getV5ItemId({ ...item, id: key }, prefix, index);
+      return transform(item, index);
+    })
+    .filter(Boolean)
+    .sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
+}
+
+function serializeV5Flashcard(rawCard, index) {
+  const card = normalizeFlashcard(cloneV5Value(rawCard || {}));
+  if (!card.id) card.id = getV5ItemId(card, 'card', index);
+  card.reviews = v5CollectionToMap(card.reviews || [], 'review', review => cloneV5Value(review));
+  card.seenBy = Object.fromEntries((card.seenBy || []).filter(Boolean).map(userId => [String(userId), true]));
+  return card;
+}
+
+function deserializeV5Flashcard(rawCard, index) {
+  const card = cloneV5Value(rawCard || {});
+  if (!card.id) card.id = getV5ItemId(card, 'card', index);
+  card.reviews = v5MapToCollection(card.reviews || {}, 'review', review => cloneV5Value(review));
+  card.seenBy = Array.isArray(card.seenBy)
+    ? [...new Set(card.seenBy.filter(Boolean))]
+    : Object.keys(card.seenBy || {}).filter(userId => card.seenBy[userId]);
+  return normalizeFlashcard(card);
+}
+
+function serializeV5User(rawUser, userId) {
+  const user = deepMerge(cloneV5Value(defaultState.users[userId]), cloneV5Value(rawUser || {}));
+  user.flashcards = v5CollectionToMap(user.flashcards || [], 'card', serializeV5Flashcard);
+  ['quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+    user[collection] = v5CollectionToMap(user[collection] || [], collection.slice(0, -1), item => cloneV5Value(item));
+  });
+  return user;
+}
+
+function deserializeV5User(rawUser, userId) {
+  const user = cloneV5Value(rawUser || {});
+  user.flashcards = v5MapToCollection(user.flashcards || {}, 'card', deserializeV5Flashcard);
+  ['quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+    user[collection] = v5MapToCollection(user[collection] || {}, collection.slice(0, -1), item => cloneV5Value(item));
+  });
+  return deepMerge(cloneV5Value(defaultState.users[userId]), user);
+}
+
+function buildV5DocumentFromState(sourceState = state) {
+  const sourceUsers = sourceState.users || {};
+  const sourceMeta = sourceState.syncMeta || {};
+  return {
+    syncSchema: 5,
+    version: 1,
+    meta: {
+      resetEpoch: Number(sourceMeta.resetEpoch) || 0,
+      updatedAt: Number(sourceMeta.v5UpdatedAt) || 0
+    },
+    data: {
+      users: {
+        G: serializeV5User(sourceUsers.G, 'G'),
+        R: serializeV5User(sourceUsers.R, 'R')
+      },
+      deleted: cloneV5Value(sourceState.deleted || { flashcards: {}, questionBank: {} }),
+      questionBank: v5CollectionToMap(sourceState.questionBank || [], 'question', item => cloneV5Value(item)),
+      _shared: {
+        streak: Number(sourceState.streak) || 0,
+        pending: Boolean(sourceState.pending),
+        jokers: Number(sourceState.jokers) || 0,
+        dailyThresholds: cloneV5Value(sourceState.dailyThresholds || { reading: 5, cards: 3, tested: 1 }),
+        dayResetHour: Number(sourceState.dayResetHour ?? 4),
+        lastUpdate: sourceState.lastUpdate || getToday(),
+        lastMonth: sourceState.lastMonth || getToday().slice(0, 7)
+      }
+    }
+  };
+}
+
+function buildV5DocumentFromSyncDoc(syncDoc) {
+  const safe = sanitizeSyncDoc(syncDoc) || buildSyncDocument();
+  const source = deepMerge(cloneV5Value(defaultState), {
+    users: safe.data.users,
+    deleted: safe.data.deleted,
+    questionBank: safe.data.questionBank,
+    streak: safe.data._shared.streak,
+    pending: safe.data._shared.pending,
+    jokers: safe.data._shared.jokers,
+    dailyThresholds: safe.data._shared.dailyThresholds,
+    dayResetHour: safe.data._shared.dayResetHour,
+    lastUpdate: safe.data._shared.lastUpdate,
+    lastMonth: safe.data._shared.lastMonth,
+    syncMeta: {
+      resetEpoch: safe.meta.resetEpoch || 0,
+      v5UpdatedAt: safe.updatedAt || safe.meta.globalUpdatedAt || 0
+    }
+  });
+  return buildV5DocumentFromState(source);
+}
+
+function normalizeV5Document(rawDocument) {
+  if (!rawDocument || Number(rawDocument.syncSchema) !== 5 || !isV5Record(rawDocument.data)) return null;
+  const rawData = rawDocument.data || {};
+  const normalized = {
+    syncSchema: 5,
+    version: 1,
+    meta: {
+      resetEpoch: Number(rawDocument.meta?.resetEpoch) || 0,
+      updatedAt: Number(rawDocument.meta?.updatedAt) || 0
+    },
+    data: {
+      users: {
+        G: deserializeV5User(rawData.users?.G, 'G'),
+        R: deserializeV5User(rawData.users?.R, 'R')
+      },
+      deleted: {
+        flashcards: cloneV5Value(rawData.deleted?.flashcards || {}),
+        questionBank: cloneV5Value(rawData.deleted?.questionBank || {})
+      },
+      questionBank: v5MapToCollection(rawData.questionBank || {}, 'question', item => cloneV5Value(item)),
+      _shared: {
+        streak: Number(rawData._shared?.streak) || 0,
+        pending: Boolean(rawData._shared?.pending),
+        jokers: Number(rawData._shared?.jokers) || 0,
+        dailyThresholds: cloneV5Value(rawData._shared?.dailyThresholds || { reading: 5, cards: 3, tested: 1 }),
+        dayResetHour: Number(rawData._shared?.dayResetHour ?? 4),
+        lastUpdate: rawData._shared?.lastUpdate || getToday(),
+        lastMonth: rawData._shared?.lastMonth || getToday().slice(0, 7)
+      }
+    }
+  };
+  return buildV5DocumentFromSyncDoc({
+    syncSchema: 3,
+    version: 1,
+    updatedAt: normalized.meta.updatedAt,
+    meta: {
+      resetEpoch: normalized.meta.resetEpoch,
+      globalUpdatedAt: normalized.meta.updatedAt,
+      usersUpdatedAt: { G: 0, R: 0 }
+    },
+    data: normalized.data
+  });
+}
+
+function v5DocumentToSyncDoc(document) {
+  const safe = normalizeV5Document(document);
+  if (!safe) return null;
+  return {
+    syncSchema: 3,
+    version: 1,
+    updatedAt: safe.meta.updatedAt,
+    meta: {
+      resetEpoch: safe.meta.resetEpoch,
+      globalUpdatedAt: safe.meta.updatedAt,
+      usersUpdatedAt: { G: 0, R: 0 }
+    },
+    data: {
+      users: {
+        G: deserializeV5User(safe.data.users.G, 'G'),
+        R: deserializeV5User(safe.data.users.R, 'R')
+      },
+      deleted: cloneV5Value(safe.data.deleted),
+      questionBank: v5MapToCollection(safe.data.questionBank, 'question', item => cloneV5Value(item)),
+      _shared: cloneV5Value(safe.data._shared)
+    }
+  };
+}
+
+function buildV5Patch(baseValue, targetValue, path = '', patch = {}) {
+  if (JSON.stringify(baseValue) === JSON.stringify(targetValue)) return patch;
+  if (isV5Record(baseValue) && isV5Record(targetValue)) {
+    const keys = new Set([...Object.keys(baseValue), ...Object.keys(targetValue)]);
+    [...keys].sort().forEach(key => {
+      buildV5Patch(baseValue[key], targetValue[key], path ? `${path}/${key}` : key, patch);
+    });
+    return patch;
+  }
+  if (path) patch[path] = targetValue === undefined ? null : cloneV5Value(targetValue);
+  return patch;
+}
+
+function applyV5Patch(document, patch) {
+  const next = cloneV5Value(document || {});
+  Object.entries(patch || {})
+    .sort(([left], [right]) => left.split('/').length - right.split('/').length)
+    .forEach(([path, value]) => {
+      const parts = path.split('/').filter(Boolean);
+      if (!parts.length) return;
+      let cursor = next;
+      parts.slice(0, -1).forEach(part => {
+        if (!isV5Record(cursor[part])) cursor[part] = {};
+        cursor = cursor[part];
+      });
+      const leaf = parts[parts.length - 1];
+      if (value === null) delete cursor[leaf];
+      else cursor[leaf] = cloneV5Value(value);
+    });
+  return next;
+}
+
+function getV5OutboxBackup() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(V5_OUTBOX_BACKUP_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistV5OutboxBackup() {
+  try {
+    localStorage.setItem(V5_OUTBOX_BACKUP_KEY, JSON.stringify([...firebaseV5.outbox.values()]));
+  } catch (error) {
+    console.warn('Impossible de sauvegarder la boîte d’envoi locale', error);
+  }
+}
+
+function openV5OutboxDatabase() {
+  if (!('indexedDB' in window)) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(V5_OUTBOX_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(V5_OUTBOX_STORE)) {
+        database.createObjectStore(V5_OUTBOX_STORE, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadV5Outbox() {
+  getV5OutboxBackup().forEach(operation => {
+    if (operation?.id) firebaseV5.outbox.set(operation.id, operation);
+  });
+  try {
+    const database = await openV5OutboxDatabase();
+    if (!database) return;
+    const operations = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(V5_OUTBOX_STORE, 'readonly');
+      const request = transaction.objectStore(V5_OUTBOX_STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+    operations.forEach(operation => {
+      if (operation?.id && !firebaseV5.outbox.has(operation.id)) firebaseV5.outbox.set(operation.id, operation);
+    });
+    persistV5OutboxBackup();
+  } catch (error) {
+    console.warn('IndexedDB indisponible : la copie locale de secours reste utilisée.', error);
+  }
+}
+
+function ensureV5OutboxReady() {
+  if (!firebaseV5.outboxReady) firebaseV5.outboxReady = loadV5Outbox();
+  return firebaseV5.outboxReady;
+}
+
+async function persistV5Operation(operation) {
+  try {
+    const database = await openV5OutboxDatabase();
+    if (!database) return;
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(V5_OUTBOX_STORE, 'readwrite');
+      transaction.objectStore(V5_OUTBOX_STORE).put(operation);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn('Impossible d’enregistrer une mise à jour hors ligne dans IndexedDB', error);
+  }
+}
+
+async function removeV5Operation(operationId) {
+  firebaseV5.outbox.delete(operationId);
+  persistV5OutboxBackup();
+  try {
+    const database = await openV5OutboxDatabase();
+    if (!database) return;
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(V5_OUTBOX_STORE, 'readwrite');
+      transaction.objectStore(V5_OUTBOX_STORE).delete(operationId);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn('Impossible de retirer une mise à jour déjà envoyée', error);
+  }
+}
+
+async function clearV5Outbox() {
+  firebaseV5.outbox.clear();
+  persistV5OutboxBackup();
+  try {
+    const database = await openV5OutboxDatabase();
+    if (!database) return;
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(V5_OUTBOX_STORE, 'readwrite');
+      transaction.objectStore(V5_OUTBOX_STORE).clear();
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn('Impossible de vider la boîte d’envoi', error);
+  }
+}
+
+function getV5OutboxOperations() {
+  return [...firebaseV5.outbox.values()].sort((left, right) => {
+    const timeDifference = (Number(left.createdAt) || 0) - (Number(right.createdAt) || 0);
+    return timeDifference || String(left.id).localeCompare(String(right.id));
+  });
+}
+
+function setV5SyncStatus(message) {
+  firebaseV5.status = message;
+  setSyncStatus(message);
+}
+
+function primeV5EffectiveDocument() {
+  if (!firebaseV5.effectiveDoc) firebaseV5.effectiveDoc = buildV5DocumentFromState(state);
+}
+
+function queueV5CurrentState() {
+  if (!isFirebaseV5Enabled() || !state.currentUser) return;
+  primeV5EffectiveDocument();
+  const target = buildV5DocumentFromState(state);
+  const patch = buildV5Patch(firebaseV5.effectiveDoc, target);
+  if (!Object.keys(patch).length) return;
+  const now = Date.now();
+  patch['meta/updatedAt'] = now;
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, resetEpoch: 0 };
+  state.syncMeta.v5UpdatedAt = now;
+  const operation = {
+    id: `v5-${getSyncDeviceId()}-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: now,
+    resetEpoch: Number(firebaseV5.effectiveDoc.meta?.resetEpoch) || 0,
+    patch
+  };
+  firebaseV5.effectiveDoc = applyV5Patch(firebaseV5.effectiveDoc, patch);
+  firebaseV5.outbox.set(operation.id, operation);
+  persistV5OutboxBackup();
+  void persistV5Operation(operation);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('Impossible de mémoriser la mise à jour locale', error);
+  }
+  if (!navigator.onLine) setV5SyncStatus('Hors ligne : mise à jour conservée et en attente d’envoi.');
+}
+
+function scheduleFirebaseV5Sync(delay = 250) {
+  if (!isFirebaseV5Enabled() || !navigator.onLine) return;
+  clearTimeout(firebaseV5.flushTimer);
+  firebaseV5.flushTimer = setTimeout(() => {
+    void startFirebaseV5().then(started => {
+      if (started) return flushV5Outbox(false);
+      return false;
+    });
+  }, delay);
+}
+
+async function readLegacyStateForV5() {
+  const response = await fetch(FIREBASE_LEGACY_STATE_URL, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`lecture des données existantes impossible (${response.status})`);
+  return sanitizeSyncDoc(await response.json());
+}
+
+async function ensureV5Seed() {
+  if (firebaseV5.remoteDoc || !firebaseV5.rootRef || !navigator.onLine) return false;
+  if (firebaseV5.seeding) return firebaseV5.seeding;
+  firebaseV5.seeding = (async () => {
+    setV5SyncStatus('Migration unique des données existantes vers Firebase V5…');
+    const legacyDocument = await readLegacyStateForV5();
+    const seed = buildV5DocumentFromSyncDoc(legacyDocument || buildSyncDocument());
+    const result = await firebaseV5.modules.runTransaction(firebaseV5.rootRef, current => {
+      if (current && typeof current === 'object') return;
+      return seed;
+    }, { applyLocally: false });
+    if (result.committed) return true;
+    return Boolean(normalizeV5Document(result.snapshot?.val?.()));
+  })().catch(error => {
+    setV5SyncStatus(`Erreur de migration Firebase : ${error.message}`);
+    return false;
+  }).finally(() => {
+    firebaseV5.seeding = null;
+  });
+  return firebaseV5.seeding;
+}
+
+async function discardStaleV5Operations(remoteEpoch) {
+  const staleIds = getV5OutboxOperations()
+    .filter(operation => Number(operation.resetEpoch) < Number(remoteEpoch))
+    .map(operation => operation.id);
+  await Promise.all(staleIds.map(operationId => removeV5Operation(operationId)));
+  return staleIds.length;
+}
+
+function applyV5DocumentToState(document) {
+  const syncDocument = v5DocumentToSyncDoc(document);
+  if (!syncDocument) return false;
+  applySyncDoc(syncDocument);
+  if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, resetEpoch: 0 };
+  state.syncMeta.resetEpoch = Number(document.meta?.resetEpoch) || 0;
+  state.syncMeta.v5UpdatedAt = Number(document.meta?.updatedAt) || 0;
+  state.syncMeta.lastSyncedAt = Date.now();
+  if (!firebaseV5.outbox.size) delete state.syncMeta.pendingUpdateAt;
+  saveState({ skipTouch: true, skipSync: true });
+  renderApp();
+  return true;
+}
+
+function queueIncomingV5Snapshot(rawDocument) {
+  firebaseV5.remoteQueue = firebaseV5.remoteQueue
+    .then(() => handleIncomingV5Snapshot(rawDocument))
+    .catch(error => {
+      console.error('Impossible d’appliquer la mise à jour Firebase', error);
+      setV5SyncStatus(`Erreur sync: ${error.message}`);
+    });
+}
+
+async function handleIncomingV5Snapshot(rawDocument) {
+  if (!rawDocument) {
+    await ensureV5Seed();
+    return;
+  }
+  const remoteDocument = normalizeV5Document(rawDocument);
+  if (!remoteDocument) {
+    throw new Error('format Firebase V5 invalide');
+  }
+  firebaseV5.remoteDoc = remoteDocument;
+  await ensureV5OutboxReady();
+  await discardStaleV5Operations(remoteDocument.meta.resetEpoch);
+  let effectiveDocument = cloneV5Value(remoteDocument);
+  const pendingOperations = getV5OutboxOperations().filter(operation => (
+    Number(operation.resetEpoch) === Number(remoteDocument.meta.resetEpoch)
+  ));
+  pendingOperations.forEach(operation => {
+    effectiveDocument = applyV5Patch(effectiveDocument, operation.patch);
+  });
+  firebaseV5.effectiveDoc = effectiveDocument;
+  applyV5DocumentToState(effectiveDocument);
+  if (!firebaseV5.calendarChecked) {
+    firebaseV5.calendarChecked = true;
+    checkMonthTransition();
+    checkDayTransition();
+  }
+  if (pendingOperations.length) {
+    setV5SyncStatus(`${pendingOperations.length} mise(s) à jour en attente d’envoi…`);
+    void flushV5Outbox(false);
+  } else {
+    setV5SyncStatus(`Synchronisé (${new Date().toLocaleTimeString('fr-FR')}).`);
+  }
+}
+
+async function startFirebaseV5() {
+  if (firebaseV5.started) return true;
+  if (firebaseV5.starting) return firebaseV5.starting;
+  firebaseV5.starting = (async () => {
+    await ensureV5OutboxReady();
+    setV5SyncStatus('Connexion Firebase en cours…');
+    const [appSdk, databaseSdk] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-database.js`)
+    ]);
+    const appName = 'bio-app-web-v5';
+    const existingApp = appSdk.getApps().find(app => app.name === appName);
+    const firebaseApp = existingApp || appSdk.initializeApp(FIREBASE_CONFIG, appName);
+    firebaseV5.modules = databaseSdk;
+    firebaseV5.database = databaseSdk.getDatabase(firebaseApp);
+    firebaseV5.rootRef = databaseSdk.ref(firebaseV5.database, FIREBASE_V5_PATH);
+    firebaseV5.connectionUnsubscribe = databaseSdk.onValue(databaseSdk.ref(firebaseV5.database, '.info/connected'), snapshot => {
+      firebaseV5.connected = snapshot.val() === true;
+      if (firebaseV5.connected) {
+        if (!firebaseV5.remoteDoc) void ensureV5Seed();
+        void flushV5Outbox(false);
+      } else if (navigator.onLine) {
+        setV5SyncStatus('Connexion Firebase en attente : les modifications restent conservées localement.');
+      }
+    });
+    firebaseV5.unsubscribe = databaseSdk.onValue(firebaseV5.rootRef, snapshot => {
+      queueIncomingV5Snapshot(snapshot.val());
+    }, error => {
+      setV5SyncStatus(`Erreur de connexion Firebase : ${error.message}`);
+    });
+    firebaseV5.started = true;
+    if (navigator.onLine) setTimeout(() => { void ensureV5Seed(); }, 0);
+    return true;
+  })();
+  try {
+    return await firebaseV5.starting;
+  } catch (error) {
+    firebaseV5.started = false;
+    firebaseV5.rootRef = null;
+    setV5SyncStatus(`Firebase indisponible : ${error.message}`);
+    return false;
+  } finally {
+    if (!firebaseV5.started) firebaseV5.starting = null;
+  }
+}
+
+async function flushV5Outbox(showFeedback = false) {
+  await ensureV5OutboxReady();
+  if (!navigator.onLine) {
+    if (showFeedback) setV5SyncStatus('Hors ligne : les mises à jour restent conservées sur cet appareil.');
+    return false;
+  }
+  if (!firebaseV5.started && !await startFirebaseV5()) return false;
+  if (!firebaseV5.connected) {
+    if (showFeedback) setV5SyncStatus('Connexion Firebase en attente : les mises à jour restent conservées localement.');
+    return false;
+  }
+  if (!firebaseV5.rootRef || !firebaseV5.remoteDoc) {
+    if (showFeedback) setV5SyncStatus('Connexion Firebase en cours : réessaie dans quelques secondes.');
+    return false;
+  }
+  if (firebaseV5.flushing) return false;
+  firebaseV5.flushing = true;
+  try {
+    let remoteEpoch = Number(firebaseV5.remoteDoc.meta?.resetEpoch) || 0;
+    for (const operation of getV5OutboxOperations()) {
+      if (Number(operation.resetEpoch) < remoteEpoch) {
+        await removeV5Operation(operation.id);
+        continue;
+      }
+      if (Number(operation.resetEpoch) > remoteEpoch) break;
+      const result = await commitV5Operation(operation);
+      firebaseV5.remoteDoc = result.document;
+      remoteEpoch = Number(result.document.meta?.resetEpoch) || remoteEpoch;
+      await removeV5Operation(operation.id);
+      if (!result.committed && result.stale) {
+        await discardStaleV5Operations(remoteEpoch);
+        firebaseV5.effectiveDoc = cloneV5Value(result.document);
+        applyV5DocumentToState(result.document);
+        break;
+      }
+    }
+    state.syncMeta.lastSyncedAt = Date.now();
+    if (!firebaseV5.outbox.size) delete state.syncMeta.pendingUpdateAt;
+    saveState({ skipTouch: true, skipSync: true });
+    if (!firebaseV5.outbox.size) {
+      setV5SyncStatus(`Synchronisé (${new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR')}).`);
+    } else {
+      setV5SyncStatus(`${firebaseV5.outbox.size} mise(s) à jour attendent le prochain envoi.`);
+    }
+    return !firebaseV5.outbox.size;
+  } catch (error) {
+    setV5SyncStatus(`Erreur sync: ${error.message}`);
+    return false;
+  } finally {
+    firebaseV5.flushing = false;
+  }
+}
+
+async function syncNowV5(showFeedback = false) {
+  if (!navigator.onLine) {
+    if (showFeedback) setV5SyncStatus('Hors ligne : dernière copie affichée, envoi conservé pour plus tard.');
+    return false;
+  }
+  if (showFeedback) setV5SyncStatus('Synchronisation Firebase en cours…');
+  if (!await startFirebaseV5()) return false;
+  return flushV5Outbox(showFeedback);
+}
+
+async function commitV5Operation(operation) {
+  const result = await firebaseV5.modules.runTransaction(firebaseV5.rootRef, current => {
+    const currentDocument = normalizeV5Document(current);
+    if (!currentDocument) return;
+    if (Number(currentDocument.meta.resetEpoch) !== Number(operation.resetEpoch)) return;
+    return applyV5Patch(currentDocument, operation.patch);
+  }, { applyLocally: false });
+  const document = normalizeV5Document(result.snapshot?.val?.());
+  if (result.committed && document) return { committed: true, document };
+  if (document && Number(document.meta.resetEpoch) > Number(operation.resetEpoch)) {
+    return { committed: false, stale: true, document };
+  }
+  throw new Error('opération Firebase non confirmée');
+}
+
+function configureFirebaseV5Sync() {
+  state.sync = {
+    enabled: true,
+    endpoint: FIREBASE_CONFIG.databaseURL,
+    token: ''
+  };
+}
+
+async function resetGlobalDataV5() {
+  if (!confirm('Réinitialiser toutes les données sur tous les appareils synchronisés ?')) return;
+  if (!navigator.onLine) {
+    setV5SyncStatus('Impossible de réinitialiser partout : reconnecte cet appareil à Internet.');
+    return;
+  }
+  setV5SyncStatus('Réinitialisation globale Firebase en cours…');
+  if (!await startFirebaseV5() || !firebaseV5.rootRef) return;
+  try {
+    const requestedEpoch = Date.now();
+    const result = await firebaseV5.modules.runTransaction(firebaseV5.rootRef, current => {
+      const currentDocument = normalizeV5Document(current);
+      const resetEpoch = Math.max(
+        requestedEpoch,
+        (Number(currentDocument?.meta?.resetEpoch) || 0) + 1,
+        (Number(state.syncMeta?.resetEpoch) || 0) + 1
+      );
+      const resetState = buildResetState({
+        keepLastSyncedAt: false,
+        resetEpoch,
+        globalUpdatedAt: resetEpoch
+      });
+      const resetDocument = buildV5DocumentFromState(resetState);
+      resetDocument.meta.resetEpoch = resetEpoch;
+      resetDocument.meta.updatedAt = requestedEpoch;
+      return resetDocument;
+    }, { applyLocally: false });
+    const resetDocument = normalizeV5Document(result.snapshot?.val?.());
+    if (!result.committed || !resetDocument) throw new Error('reset Firebase non confirmé');
+    await clearV5Outbox();
+    firebaseV5.remoteDoc = resetDocument;
+    firebaseV5.effectiveDoc = cloneV5Value(resetDocument);
+    applyV5DocumentToState(resetDocument);
+    setV5SyncStatus('Réinitialisation globale confirmée sur Firebase.');
+  } catch (error) {
+    setV5SyncStatus(`Erreur reset global: ${error.message}`);
+  }
+}
+
 async function pullRemoteDoc(withEtag = false) {
   console.debug('pullRemoteDoc: fetching', state.sync.endpoint);
   const headers = getSyncHeaders();
@@ -1013,6 +1731,10 @@ async function syncNowV2Legacy(showFeedback = false) {
 }
 
 function scheduleSync(delay = 1200) {
+  if (isFirebaseV5Enabled()) {
+    scheduleFirebaseV5Sync(delay);
+    return;
+  }
   if (!isSyncConfigured()) return;
   if (!navigator.onLine) return;
   console.debug('scheduleSync: will run in', delay, 'ms');
@@ -1024,6 +1746,11 @@ function scheduleSync(delay = 1200) {
 
 function startSyncPolling() {
   if (syncPollInterval) clearInterval(syncPollInterval);
+  if (isFirebaseV5Enabled()) {
+    syncPollInterval = null;
+    void startFirebaseV5();
+    return;
+  }
   if (!isSyncConfigured()) {
     syncPollInterval = null;
     return;
@@ -1073,6 +1800,10 @@ function handleIncomingRemoteDoc(remoteDoc) {
 }
 
 function startSyncRealtime() {
+  if (isFirebaseV5Enabled()) {
+    void startFirebaseV5();
+    return;
+  }
   stopSyncRealtime();
   if (!isSyncConfigured() || typeof EventSource === 'undefined' || state.sync?.token) return;
   try {
@@ -1185,6 +1916,7 @@ async function readCanonicalRemote() {
 }
 
 async function syncNow(showFeedback = false) {
+  if (isFirebaseV5Enabled()) return syncNowV5(showFeedback);
   if (!isSyncConfigured()) {
     if (showFeedback) setSyncStatus('Configure une URL puis active la sync.');
     return false;
@@ -1927,23 +2659,27 @@ function renderSettings() {
   if (state.currentUser === 'R') {
     populateAdminInputs();
   }
-  if (syncEnabledInput) syncEnabledInput.checked = Boolean(state.sync?.enabled);
-  if (syncEndpointInput) syncEndpointInput.value = state.sync?.endpoint || '';
-  if (syncTokenInput) syncTokenInput.value = state.sync?.token || '';
+  if (syncEnabledInput) {
+    syncEnabledInput.checked = true;
+    syncEnabledInput.disabled = true;
+  }
+  if (syncEndpointInput) {
+    syncEndpointInput.value = FIREBASE_CONFIG.databaseURL;
+    syncEndpointInput.disabled = true;
+  }
+  if (syncTokenInput) {
+    syncTokenInput.value = '';
+    syncTokenInput.disabled = true;
+  }
   if (syncStatus) {
-    if (!state.sync?.enabled) {
-      setSyncStatus('Sync désactivée.');
-    } else if (!state.sync?.endpoint) {
-      setSyncStatus('Ajoute une URL de synchronisation.');
-    } else if (!navigator.onLine) {
+    if (!navigator.onLine) {
       setSyncStatus('Hors ligne, sync en attente.');
+    } else if (firebaseV5.status) {
+      setSyncStatus(firebaseV5.status);
+    } else if (state.syncMeta?.lastSyncedAt) {
+      setSyncStatus(`Synchronisé (${new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR')}).`);
     } else {
-      const lastSynced = state.syncMeta?.lastSyncedAt;
-      if (lastSynced) {
-        setSyncStatus(`Dernière sync: ${new Date(lastSynced).toLocaleTimeString('fr-FR')}`);
-      } else {
-        setSyncStatus('Sync activée, en attente du premier envoi.');
-      }
+      setSyncStatus('Connexion Firebase en cours…');
     }
   }
 }
@@ -3132,6 +3868,7 @@ async function resetLocalData() {
 }
 
 async function resetGlobalData() {
+  if (isFirebaseV5Enabled()) return resetGlobalDataV5();
   if (!confirm('Réinitialiser toutes les données sur tous les appareils synchronisés ?')) return;
   if (!isSyncConfigured() || !navigator.onLine) {
     setSyncStatus('Impossible de réinitialiser partout : connecte cet appareil et active la sync.');
@@ -3398,18 +4135,10 @@ function toggleTheme() {
 }
 
 function saveSyncSettings() {
-  if (!state.sync) state.sync = { enabled: false, endpoint: '', token: '' };
-  state.sync.enabled = Boolean(syncEnabledInput?.checked);
-  state.sync.endpoint = normalizeSyncEndpoint(syncEndpointInput?.value);
-  state.sync.token = (syncTokenInput?.value || '').trim();
-  saveState({ skipTouch: true });
-  startSyncPolling();
-  if (state.sync.enabled && state.sync.endpoint) startSyncRealtime();
-  else stopSyncRealtime();
+  configureFirebaseV5Sync();
+  saveState({ skipTouch: true, skipSync: true });
   renderSettings();
-  if (state.sync.enabled && state.sync.endpoint) {
-    syncNow(true);
-  }
+  void syncNowV5(true);
 }
 
 function initUserDaily() {
@@ -3420,13 +4149,14 @@ function initUserDaily() {
 }
 
 function init() {
-  if (!state.sync) state.sync = { enabled: false, endpoint: DEFAULT_SYNC_ENDPOINT, token: '' };
-  if (state.sync.endpoint === LEGACY_SYNC_ENDPOINT) {
-    state.sync.endpoint = DEFAULT_SYNC_ENDPOINT;
-  }
+  configureFirebaseV5Sync();
+  primeV5EffectiveDocument();
+  void ensureV5OutboxReady();
   if (!state.syncMeta) state.syncMeta = { usersUpdatedAt: { G: 0, R: 0 }, globalUpdatedAt: 0, lastSyncedAt: 0 };
-  checkMonthTransition();
-  checkDayTransition();
+  if (!isFirebaseV5Enabled()) {
+    checkMonthTransition();
+    checkDayTransition();
+  }
   renderQuizStatus();
   resetFlashcardForm();
   attachHandlers();
@@ -3444,19 +4174,28 @@ function init() {
     }).catch(console.error);
   }
   window.addEventListener('online', () => {
-    setSyncStatus('Connexion retrouvée, synchronisation...');
-    startSyncRealtime();
-    syncNow(false);
+    setV5SyncStatus('Connexion retrouvée, synchronisation Firebase…');
+    void startFirebaseV5().then(() => syncNowV5(false));
   });
   window.addEventListener('focus', () => {
-    if (!isSyncConfigured()) return;
-    syncNow(false);
+    if (isFirebaseV5Enabled()) {
+      void syncNowV5(false);
+      return;
+    }
+    if (isSyncConfigured()) syncNow(false);
   });
   window.addEventListener('pageshow', () => {
-    if (!isSyncConfigured()) return;
-    syncNow(false);
+    if (isFirebaseV5Enabled()) {
+      void syncNowV5(false);
+      return;
+    }
+    if (isSyncConfigured()) syncNow(false);
   });
   document.addEventListener('visibilitychange', () => {
+    if (isFirebaseV5Enabled()) {
+      if (!document.hidden) void syncNowV5(false);
+      return;
+    }
     startSyncPolling();
     if (!document.hidden && isSyncConfigured()) {
       syncNow(false);
@@ -3464,7 +4203,7 @@ function init() {
   });
   window.addEventListener('offline', () => {
     stopSyncRealtime();
-    setSyncStatus('Hors ligne, sync en attente.');
+    setV5SyncStatus('Hors ligne : les nouvelles actions restent conservées sur cet appareil.');
   });
   window.addEventListener('storage', (event) => {
     if (event.key !== STORAGE_KEY || !event.newValue) return;
@@ -3475,12 +4214,7 @@ function init() {
       console.warn('Could not apply external state update', error);
     }
   });
-  if (isSyncConfigured()) {
-    scheduleSync(300);
-    startSyncPolling();
-    startSyncRealtime();
-    syncNow(false);
-  }
+  void startFirebaseV5().then(() => syncNowV5(false));
 }
 
 function renderQuizStatus() {

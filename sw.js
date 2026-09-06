@@ -1,4 +1,4 @@
-const CACHE_NAME = 'revisio-ibo-cache-v21';
+const CACHE_NAME = 'revisio-ibo-cache-v23';
 const ASSETS = [
   '.',
   'index.html',
@@ -48,7 +48,9 @@ self.addEventListener('fetch', event => {
             return response;
           });
         })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match('index.html')))
+        .catch(() => caches.match(event.request).then(cached => (
+          cached || caches.match(requestUrl.pathname.split('/').pop()) || caches.match('index.html')
+        )))
     );
     return;
   }

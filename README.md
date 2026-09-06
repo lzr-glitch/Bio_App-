@@ -1,5 +1,14 @@
 # Revisio IBO
 
+## Synchronisation Firebase V5
+
+- La synchronisation est automatique et utilise `bio-app/realtime-v5` dans Firebase.
+- L'ancien fichier `bio-app/state` est conservé comme source de migration et n'est plus réécrit par l'application V5.
+- Chaque changement vise uniquement les données concernées (une carte, une revue ou un profil), ce qui évite qu'une écriture G efface une écriture R.
+- Une boîte d'envoi locale persistante conserve les actions faites hors ligne et les envoie au retour de Firebase, même après un rechargement de l'application.
+- Le bouton « Réinitialiser partout » crée une nouvelle époque de reset : les anciennes mises à jour hors ligne sont alors ignorées au lieu de recréer des données supprimées.
+- Les règles Firebase actuelles sont publiques. Ne partage pas l'URL de la base avec des personnes non fiables tant qu'une authentification n'est pas ajoutée.
+
 Application web mobile conçue pour deux utilisatrices qui révisent ensemble chaque jour.
 
 ## Ce que l’app propose

@@ -455,12 +455,13 @@
           <button class="danger-button" id="global-reset">Réinitialiser partout</button>
           <p class="small-note">Le reset local vide seulement cet appareil. Le reset global repart de zéro sur tous les appareils synchronisés.</p>
           <hr />
-          <h3>Synchronisation internet</h3>
+          <h3>Synchronisation Firebase</h3>
+          <p class="small-note">Automatique : les changements sont envoyés dès qu’Internet revient et les données reçues s’affichent sans vider le cache.</p>
           <label class="sync-toggle-row">
-            <input type="checkbox" id="sync-enabled" />
-            Activer la synchronisation
+            <input type="checkbox" id="sync-enabled" checked disabled />
+            Synchronisation automatique activée
           </label>
-          <button class="secondary-button" id="sync-edit-toggle">Modifier l'URL de sync</button>
+          <button class="secondary-button hidden" id="sync-edit-toggle">Modifier l'URL de sync</button>
           <div id="sync-advanced" class="hidden">
           <label>URL de synchronisation (GET/PUT JSON)</label>
           <input type="text" id="sync-endpoint" placeholder="https://.../shared-state.json" />
@@ -468,10 +469,10 @@
           <input type="password" id="sync-token" placeholder="Bearer token (si nécessaire)" />
           </div>
           <div class="form-actions">
-            <button class="primary-button" id="sync-save">Enregistrer la sync</button>
+            <button class="primary-button" id="sync-save">Réessayer la connexion</button>
             <button class="secondary-button" id="sync-now">Synchroniser maintenant</button>
           </div>
-          <p class="small-note" id="sync-status">Sync désactivée.</p>
+          <p class="small-note" id="sync-status">Connexion Firebase en cours…</p>
         </div>
         <div class="card admin-panel hidden" id="admin-panel">
           <h3>Réglage R</h3>
@@ -498,6 +499,6 @@
     <button class="tab-button" data-nav="settings" aria-label="Paramètres"><span class="tab-emoji" aria-hidden="true">⚙</span><span class="visually-hidden">Paramètres</span></button>
   </nav>
 
-  <script src="app.js?v=20260906b"></script>
+  <script src="app.js?v=20260906d"></script>
 </body>
 </html>
