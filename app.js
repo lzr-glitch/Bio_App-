@@ -17,6 +17,7 @@ const FIREBASE_LEGACY_STATE_URL = `${FIREBASE_CONFIG.databaseURL}/bio-app/state.
 const V5_OUTBOX_BACKUP_KEY = 'revisio-ibo-v5-outbox';
 const V5_OUTBOX_DB_NAME = 'revisio-ibo-v5-sync';
 const V5_OUTBOX_STORE = 'outbox';
+const WEEKLY_FINALIZATION_HOUR = 14;
 const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
@@ -40,8 +41,8 @@ const defaultState = {
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
   deleted: { flashcards: {}, questionBank: {} },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [] },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [] }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [], weeklyAwards: {} },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [], weeklyAwards: {} }
   },
   questionBank: []
 };
@@ -182,6 +183,8 @@ const myTotalTests = document.getElementById('my-total-tests');
 const myTotalQuizzes = document.getElementById('my-total-quizzes');
 const mySuccessRate = document.getElementById('my-success-rate');
 const myTotalReading = document.getElementById('my-total-reading');
+const myTotalWork = document.getElementById('my-total-work');
+const myWeeklyWins = document.getElementById('my-weekly-wins');
 const otherJokers = document.getElementById('other-jokers');
 const otherTotalCards = document.getElementById('other-total-cards');
 const otherWeekCards = document.getElementById('other-week-cards');
@@ -189,6 +192,8 @@ const otherTotalTests = document.getElementById('other-total-tests');
 const otherTotalQuizzes = document.getElementById('other-total-quizzes');
 const otherSuccessRate = document.getElementById('other-success-rate');
 const otherTotalReading = document.getElementById('other-total-reading');
+const otherTotalWork = document.getElementById('other-total-work');
+const otherWeeklyWins = document.getElementById('other-weekly-wins');
 const adminSyncCard = document.getElementById('admin-sync-card');
 const syncDataNowBtn = document.getElementById('sync-data-now');
 
@@ -227,6 +232,8 @@ let workTimerInterval = null;
 let workTimerSeconds = 0;
 let isWorkTimerRunning = false;
 let currentWorkSession = null;
+let weeklyFinalizationInFlight = false;
+let weeklyFinalizationTimer = null;
 let reviewQueue = [];
 let adminFeedbackTimeout = null;
 let reviewIndex = 0;
@@ -585,6 +592,35 @@ function normalizeEventItem(item, prefix) {
   return normalized;
 }
 
+function normalizeWeeklyAwards(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized = {};
+  Object.entries(value).forEach(([weekKey, rawAward]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekKey) || !rawAward || typeof rawAward !== 'object') return;
+    normalized[weekKey] = {
+      weekKey,
+      start: /^\d{4}-\d{2}-\d{2}$/.test(rawAward.start) ? rawAward.start : weekKey,
+      end: /^\d{4}-\d{2}-\d{2}$/.test(rawAward.end) ? rawAward.end : addDaysToDateKey(weekKey, 6),
+      winner: rawAward.winner === 'G' || rawAward.winner === 'R' ? rawAward.winner : null,
+      scoreG: Math.max(0, Math.round(Number(rawAward.scoreG) || 0)),
+      scoreR: Math.max(0, Math.round(Number(rawAward.scoreR) || 0)),
+      finalizedAt: Math.max(0, Number(rawAward.finalizedAt) || 0)
+    };
+  });
+  return normalized;
+}
+
+function mergeWeeklyAwards(localAwards = {}, remoteAwards = {}) {
+  const merged = normalizeWeeklyAwards(localAwards);
+  Object.entries(normalizeWeeklyAwards(remoteAwards)).forEach(([weekKey, remoteAward]) => {
+    const localAward = merged[weekKey];
+    if (!localAward || (remoteAward.finalizedAt && (!localAward.finalizedAt || remoteAward.finalizedAt < localAward.finalizedAt))) {
+      merged[weekKey] = remoteAward;
+    }
+  });
+  return merged;
+}
+
 function mergeNumericMaps(localMap = {}, remoteMap = {}) {
   const merged = { ...localMap };
   Object.keys(remoteMap || {}).forEach(key => {
@@ -626,7 +662,8 @@ function mergeUsers(localUser, remoteUser, deleted = {}) {
     tests: mergeById((local.tests || []).map(item => normalizeEventItem(item, 'test')), (remote.tests || []).map(item => normalizeEventItem(item, 'test'))),
     monthlyTests: mergeById((local.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly')), (remote.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'))),
     badges: [...new Set([...(local.badges || []), ...(remote.badges || [])])],
-    workHistory: mergeById((local.workHistory || []).map(item => normalizeEventItem(item, 'work')), (remote.workHistory || []).map(item => normalizeEventItem(item, 'work')))
+    workHistory: mergeById((local.workHistory || []).map(item => normalizeEventItem(item, 'work')), (remote.workHistory || []).map(item => normalizeEventItem(item, 'work'))),
+    weeklyAwards: mergeWeeklyAwards(local.weeklyAwards, remote.weeklyAwards)
   };
 }
 
@@ -637,6 +674,7 @@ function applyDeletedToUser(user, deleted = {}) {
   safeUser.tests = (safeUser.tests || []).map(item => normalizeEventItem(item, 'test'));
   safeUser.monthlyTests = (safeUser.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'));
   safeUser.workHistory = (safeUser.workHistory || []).map(item => normalizeEventItem(item, 'work'));
+  safeUser.weeklyAwards = normalizeWeeklyAwards(safeUser.weeklyAwards);
   return safeUser;
 }
 
@@ -1269,6 +1307,7 @@ async function handleIncomingV5Snapshot(rawDocument) {
     void flushV5Outbox(false);
   } else {
     setV5SyncStatus(`Synchronisé (${new Date().toLocaleTimeString('fr-FR')}).`);
+    void finalizeWeeklyAwardIfDue();
   }
 }
 
@@ -1359,6 +1398,7 @@ async function flushV5Outbox(showFeedback = false) {
     saveState({ skipTouch: true, skipSync: true });
     if (!firebaseV5.outbox.size) {
       setV5SyncStatus(`Synchronisé (${new Date(state.syncMeta.lastSyncedAt).toLocaleTimeString('fr-FR')}).`);
+      void finalizeWeeklyAwardIfDue();
     } else {
       setV5SyncStatus(`${firebaseV5.outbox.size} mise(s) à jour attendent le prochain envoi.`);
     }
@@ -1379,6 +1419,49 @@ async function syncNowV5(showFeedback = false) {
   if (showFeedback) setV5SyncStatus('Synchronisation Firebase en cours…');
   if (!await startFirebaseV5()) return false;
   return flushV5Outbox(showFeedback);
+}
+
+async function finalizeWeeklyAwardIfDue(now = new Date()) {
+  const period = getEligibleWeeklyAwardPeriod(now);
+  if (!period || weeklyFinalizationInFlight || !state.currentUser || !navigator.onLine) return false;
+  if (getWeeklyAwards()[period.key]) return false;
+  weeklyFinalizationInFlight = true;
+  try {
+    if (!await startFirebaseV5() || !firebaseV5.rootRef || !firebaseV5.connected) return false;
+    if (firebaseV5.flushing) return false;
+    if (firebaseV5.outbox.size && !await flushV5Outbox(false)) return false;
+
+    let changed = false;
+    const finalizedAt = Date.now();
+    const result = await firebaseV5.modules.runTransaction(firebaseV5.rootRef, current => {
+      const currentDocument = normalizeV5Document(current);
+      if (!currentDocument) return;
+      const finalized = finalizeWeeklyAwardDocument(currentDocument, period, finalizedAt);
+      if (!finalized.changed) return;
+      changed = true;
+      return finalized.document;
+    }, { applyLocally: false });
+    const document = normalizeV5Document(result.snapshot?.val?.());
+    if (!document) throw new Error('résultat hebdomadaire Firebase invalide');
+    firebaseV5.remoteDoc = document;
+    firebaseV5.effectiveDoc = cloneV5Value(document);
+    applyV5DocumentToState(document);
+    if (changed && result.committed) setV5SyncStatus('Victoire hebdomadaire enregistrée.');
+    return Boolean(changed && result.committed);
+  } catch (error) {
+    console.warn('Impossible de finaliser la victoire hebdomadaire', error);
+    return false;
+  } finally {
+    weeklyFinalizationInFlight = false;
+  }
+}
+
+function startWeeklyAwardScheduler() {
+  if (weeklyFinalizationTimer) clearInterval(weeklyFinalizationTimer);
+  weeklyFinalizationTimer = setInterval(() => {
+    if (!document.hidden) void finalizeWeeklyAwardIfDue();
+  }, 60 * 1000);
+  void finalizeWeeklyAwardIfDue();
 }
 
 async function commitV5Operation(operation) {
@@ -2015,7 +2098,8 @@ function getUser(id) {
       daily: {},
       monthlyTests: [],
       badges: [],
-      workHistory: []
+      workHistory: [],
+      weeklyAwards: {}
     };
   }
   const user = state.users[id];
@@ -2028,6 +2112,7 @@ function getUser(id) {
   if (!Array.isArray(user.monthlyTests)) user.monthlyTests = [];
   if (!Array.isArray(user.badges)) user.badges = [];
   if (!Array.isArray(user.workHistory)) user.workHistory = [];
+  if (!user.weeklyAwards || typeof user.weeklyAwards !== 'object' || Array.isArray(user.weeklyAwards)) user.weeklyAwards = {};
   if (!user.chapters || typeof user.chapters !== 'object') user.chapters = {};
   return user;
 }
@@ -2203,12 +2288,8 @@ function renderApp() {
 
 function sumWorkLast7(user) {
   const last7 = getLastDays(7);
-  return (user.workHistory || [])
-    .filter(entry => {
-      const day = new Date(entry.date).toISOString().slice(0,10);
-      return last7.includes(day);
-    })
-    .reduce((sum, entry) => sum + Math.floor(entry.duration / 60), 0); // en minutes
+  const seconds = getWorkSecondsForPeriod(user, { start: last7[last7.length - 1], end: last7[0] });
+  return Math.floor(seconds / 60);
 }
 
 function updateHome() {
@@ -2641,6 +2722,8 @@ function renderProfile() {
   setText(myTotalQuizzes, displayG.totalQuizzes);
   setText(mySuccessRate, `${displayG.successRate}%`);
   setText(myTotalReading, `${displayG.totalReading} min`);
+  setText(myTotalWork, formatReadingSeconds(displayG.totalWorkSeconds));
+  setText(myWeeklyWins, displayG.weeklyWins);
   setText(otherJokers, userR.jokers);
   setText(otherTotalCards, displayR.totalCards);
   setText(otherWeekCards, displayR.weekCards);
@@ -2648,6 +2731,8 @@ function renderProfile() {
   setText(otherTotalQuizzes, displayR.totalQuizzes);
   setText(otherSuccessRate, `${displayR.successRate}%`);
   setText(otherTotalReading, `${displayR.totalReading} min`);
+  setText(otherTotalWork, formatReadingSeconds(displayR.totalWorkSeconds));
+  setText(otherWeeklyWins, displayR.weeklyWins);
   if (adminSyncCard) {
     adminSyncCard.classList.remove('hidden');
   }
@@ -2692,7 +2777,9 @@ function getProfileDisplayStats(user) {
       totalTests: 0,
       totalQuizzes: 0,
       successRate: 0,
-      totalReading: 0
+      totalReading: 0,
+      totalWorkSeconds: 0,
+      weeklyWins: 0
     };
   }
   const baseStats = computeStats(user);
@@ -2701,13 +2788,16 @@ function getProfileDisplayStats(user) {
   const tests = Array.isArray(user.tests) ? user.tests : [];
   const quizzes = Array.isArray(user.quizzes) ? user.quizzes : [];
   const totalReading = Object.values(readings || {}).reduce((sum, v) => sum + Number(v || 0), 0);
+  const totalWorkSeconds = getWorkSecondsForPeriod(user, { start: null, end: null });
   return {
     totalCards: flashcards.length,
     weekCards: baseStats.weekCards,
     totalTests: tests.length,
     totalQuizzes: quizzes.length,
     successRate: baseStats.successRate,
-    totalReading
+    totalReading,
+    totalWorkSeconds,
+    weeklyWins: getWeeklyWinCount(user.name)
   };
 }
 
@@ -2769,6 +2859,99 @@ function getMondayKey(dayKey = getToday()) {
   return toLocalDateKey(date);
 }
 
+function addDaysToDateKey(dayKey, days) {
+  const [year, month, day] = String(dayKey || '').split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  date.setDate(date.getDate() + days);
+  return toLocalDateKey(date);
+}
+
+function isDayInPeriod(dayKey, period = {}) {
+  if (!dayKey) return false;
+  if (!period.start || !period.end) return true;
+  return dayKey >= period.start && dayKey <= period.end;
+}
+
+function getWorkEntryDayKey(entry) {
+  const value = entry?.date || entry?.createdAt || entry?.updatedAt;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : toLocalDateKey(date);
+}
+
+function getWorkSecondsForPeriod(user, period = {}) {
+  const history = Array.isArray(user?.workHistory) ? user.workHistory : [];
+  return history.reduce((total, entry) => {
+    if (!entry || entry.received || !isDayInPeriod(getWorkEntryDayKey(entry), period)) return total;
+    return total + Math.max(0, Number(entry.duration) || 0);
+  }, 0);
+}
+
+function getWeekPeriodForDay(dayKey = getToday()) {
+  const start = getMondayKey(dayKey);
+  return { key: start, start, end: addDaysToDateKey(start, 6) };
+}
+
+function getEligibleWeeklyAwardPeriod(now = new Date()) {
+  const currentPeriod = getWeekPeriodForDay(toLocalDateKey(now));
+  const isSundayAfternoon = now.getDay() === 0 && now.getHours() >= WEEKLY_FINALIZATION_HOUR;
+  return isSundayAfternoon
+    ? currentPeriod
+    : getWeekPeriodForDay(addDaysToDateKey(currentPeriod.start, -1));
+}
+
+function getWeeklyAwards() {
+  return normalizeWeeklyAwards(getUser('G')?.weeklyAwards);
+}
+
+function getWeeklyWinCount(userId, awards = getWeeklyAwards()) {
+  if (userId !== 'G' && userId !== 'R') return 0;
+  return Object.values(awards).filter(award => award.winner === userId).length;
+}
+
+function getWeeklyCompetitionScore(user, period) {
+  const stats = getPeriodStats(user, period);
+  const completedTests = (user?.tests || []).filter(test => isDayInPeriod(test.date, period)).length
+    + (user?.quizzes || []).filter(quiz => isDayInPeriod(quiz.date, period)).length;
+  return Math.floor(stats.workSeconds / 60)
+    + Math.floor(stats.readingSeconds / 60)
+    + stats.flashcardsCreated * 3
+    + completedTests * 4;
+}
+
+function createWeeklyAward(users, period, finalizedAt = Date.now()) {
+  const scoreG = getWeeklyCompetitionScore(users?.G, period);
+  const scoreR = getWeeklyCompetitionScore(users?.R, period);
+  return {
+    weekKey: period.key,
+    start: period.start,
+    end: period.end,
+    winner: scoreG === scoreR ? null : (scoreG > scoreR ? 'G' : 'R'),
+    scoreG,
+    scoreR,
+    finalizedAt
+  };
+}
+
+function finalizeWeeklyAwardDocument(document, period, finalizedAt = Date.now()) {
+  const next = cloneV5Value(document);
+  const users = {
+    G: deserializeV5User(next.data?.users?.G, 'G'),
+    R: deserializeV5User(next.data?.users?.R, 'R')
+  };
+  const awards = normalizeWeeklyAwards(users.G.weeklyAwards);
+  if (awards[period.key]) return { document: next, changed: false };
+  awards[period.key] = createWeeklyAward(users, period, finalizedAt);
+  next.data.users.G.weeklyAwards = awards;
+  next.meta.updatedAt = finalizedAt;
+  return { document: next, changed: true };
+}
+
+function getWeeklyWinnerLabel(award, userId) {
+  if (!award || !award.winner) return 'Match nul';
+  return award.winner === userId ? 'Toi' : 'Autre personne';
+}
+
 function getReadingSecondsForDay(user, dayKey) {
   if (user.readingSeconds && Number.isFinite(user.readingSeconds[dayKey])) {
     return Math.max(0, Number(user.readingSeconds[dayKey]));
@@ -2803,41 +2986,41 @@ function getQuestionCreatedDay(question) {
 }
 
 function getPeriodStats(user, period) {
-  const inRange = (dayKey) => {
-    if (!dayKey) return false;
-    if (!period.start || !period.end) return true;
-    return dayKey >= period.start && dayKey <= period.end;
-  };
+  const safeUser = user || {};
+  const inRange = dayKey => isDayInPeriod(dayKey, period);
 
   const readingKeys = new Set([
-    ...Object.keys(user.reading || {}),
-    ...Object.keys(user.readingSeconds || {})
+    ...Object.keys(safeUser.reading || {}),
+    ...Object.keys(safeUser.readingSeconds || {})
   ]);
   let readingSeconds = 0;
   readingKeys.forEach(dayKey => {
-    if (inRange(dayKey)) readingSeconds += getReadingSecondsForDay(user, dayKey);
+    if (inRange(dayKey)) readingSeconds += getReadingSecondsForDay(safeUser, dayKey);
   });
 
-  const flashcardsCreated = user.flashcards.filter(card => inRange(card.date)).length;
-  const flashcardsTested = user.tests
+  const flashcardsCreated = (safeUser.flashcards || []).filter(card => inRange(card.date)).length;
+  const flashcardsTested = (safeUser.tests || [])
     .filter(test => inRange(test.date))
     .reduce((sum, test) => sum + (Number(test.count) || 0), 0);
 
   const quizQuestionsCreated = state.questionBank.filter(question => {
-    if (question.createdBy !== user.name) return false;
+    if (question.createdBy !== safeUser.name) return false;
     const createdDay = getQuestionCreatedDay(question);
     if (!period.start || !period.end) return true;
     return createdDay ? inRange(createdDay) : false;
   }).length;
 
-  const quizQuestionsTested = user.quizzes.filter(quiz => inRange(quiz.date)).length;
+  const quizQuestionsTested = (safeUser.quizzes || []).filter(quiz => inRange(quiz.date)).length;
+  const workSeconds = getWorkSecondsForPeriod(safeUser, period);
 
   return {
     readingSeconds,
+    workSeconds,
     flashcardsCreated,
     flashcardsTested,
     quizQuestionsCreated,
-    quizQuestionsTested
+    quizQuestionsTested,
+    weeklyWins: getWeeklyWinCount(safeUser.name)
   };
 }
 
@@ -2854,6 +3037,11 @@ function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, righ
       <span>Temps de lecture</span>
       <strong>${formatReadingSeconds(leftStats.readingSeconds)}</strong>
       <strong>${formatReadingSeconds(rightStats.readingSeconds)}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Temps de travail</span>
+      <strong>${formatReadingSeconds(leftStats.workSeconds)}</strong>
+      <strong>${formatReadingSeconds(rightStats.workSeconds)}</strong>
     </div>
     <div class="stats-compare-grid">
       <span>Flashcards créées</span>
@@ -2874,6 +3062,11 @@ function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, righ
       <span>Questions quiz testées</span>
       <strong>${leftStats.quizQuestionsTested}</strong>
       <strong>${rightStats.quizQuestionsTested}</strong>
+    </div>
+    <div class="stats-compare-grid">
+      <span>Victoires hebdomadaires</span>
+      <strong>${leftStats.weeklyWins}</strong>
+      <strong>${rightStats.weeklyWins}</strong>
     </div>`;
   return card;
 }
@@ -3020,13 +3213,17 @@ function renderBadges() {
 function renderRecap() {
   const user = getUser(state.currentUser);
   const other = getUser(getOtherUserId());
+  const currentWeek = getWeekPeriodForDay(getToday());
+  const currentWeekStats = getPeriodStats(user, { start: currentWeek.start, end: getToday() });
   const recap = document.createElement('div');
   recap.className = 'recap-section';
   recap.innerHTML = `
     <span>Temps de lecture cette semaine</span><strong>${sumLast7(user.reading)} min</strong>
+    <span>Temps de travail cette semaine</span><strong>${formatReadingSeconds(currentWeekStats.workSeconds)}</strong>
     <span>Flashcards créées cette semaine</span><strong>${user.flashcards.filter(card => getLastDays(7).includes(card.date)).length}</strong>
     <span>Tests réalisés cette semaine</span><strong>${user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length}</strong>
     <span>Score moyen quiz</span><strong>${averageQuizScore(user)}%</strong>
+    <span>Victoires hebdomadaires</span><strong>${getWeeklyWinCount(user.name)}</strong>
     <span>Vainqueur de la semaine</span><strong>${determineWeeklyWinner(user, other)}</strong>
   `;
   weeklyRecap.innerHTML = '';
@@ -3044,8 +3241,12 @@ function averageQuizScore(user) {
 }
 
 function determineWeeklyWinner(user, other) {
-  const scoreUser = sumWorkLast7(user) + sumLast7(user.reading) + user.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
-  const scoreOther = sumWorkLast7(other) + sumLast7(other.reading) + other.flashcards.filter(card => getLastDays(7).includes(card.date)).length * 3 + (other.tests.filter(test => getLastDays(7).includes(test.date)).length + other.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length) * 4;
+  const completedPeriod = getEligibleWeeklyAwardPeriod();
+  const completedAward = getWeeklyAwards()[completedPeriod.key];
+  if (completedAward) return getWeeklyWinnerLabel(completedAward, user.name);
+  const currentPeriod = getWeekPeriodForDay(getToday());
+  const scoreUser = getWeeklyCompetitionScore(user, currentPeriod);
+  const scoreOther = getWeeklyCompetitionScore(other, currentPeriod);
   if (scoreUser === scoreOther) return 'Match nul';
   return scoreUser > scoreOther ? 'Toi' : 'Autre personne';
 }
@@ -3915,6 +4116,7 @@ function attachHandlers() {
       saveState();
       renderApp();
       goToPage('home');
+      void finalizeWeeklyAwardIfDue();
     });
   });
   document.querySelectorAll('[data-nav]').forEach(btn => {
@@ -4197,7 +4399,10 @@ function init() {
   });
   document.addEventListener('visibilitychange', () => {
     if (isFirebaseV5Enabled()) {
-      if (!document.hidden) void syncNowV5(false);
+      if (!document.hidden) {
+        void syncNowV5(false);
+        void finalizeWeeklyAwardIfDue();
+      }
       return;
     }
     startSyncPolling();
@@ -4218,6 +4423,7 @@ function init() {
       console.warn('Could not apply external state update', error);
     }
   });
+  startWeeklyAwardScheduler();
   void startFirebaseV5().then(() => syncNowV5(false));
 }
 
