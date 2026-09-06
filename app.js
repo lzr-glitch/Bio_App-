@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'revisio-ibo-state';
 const SYNC_DEVICE_STORAGE_KEY = 'revisio-ibo-sync-device-id';
+const APP_SESSION_STARTED_AT = Date.now();
 const LEGACY_SYNC_ENDPOINT = 'https://lzr-glitch.github.io/Bio_App-/';
 const DEFAULT_SYNC_ENDPOINT = '';
 const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
@@ -230,6 +231,7 @@ let syncEventSource = null;
 let lastRemoteDocUpdatedAt = 0;
 let syncRetryTimeout = null;
 let syncFailureCount = 0;
+let lastRemoteSyncDoc = null;
 const SYNC_REQUEST_TIMEOUT_MS = 8000;
 
 function createEventId(prefix) {
@@ -385,23 +387,62 @@ function markDeleted(type, id) {
   getDeletedMap(type)[id] = Date.now();
 }
 
+function syncCollectionToMap(items, prefix) {
+  const mapped = {};
+  (Array.isArray(items) ? items : []).forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const id = String(item.id || `${prefix}-${item.createdAt || item.updatedAt || item.date || index}`);
+    const value = { ...item, id };
+    if (Array.isArray(value.reviews)) value.reviews = syncCollectionToMap(value.reviews, `${id}-review`);
+    if (Array.isArray(value.seenBy)) value.seenBy = Object.fromEntries(value.seenBy.map(userId => [userId, true]));
+    mapped[id] = value;
+  });
+  return mapped;
+}
+
+function syncCollectionToArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).map(([id, item]) => {
+    if (!item || typeof item !== 'object') return null;
+    const restored = { ...item, id: item.id || id };
+    if (restored.reviews && !Array.isArray(restored.reviews)) restored.reviews = syncCollectionToArray(restored.reviews);
+    if (restored.seenBy && !Array.isArray(restored.seenBy)) restored.seenBy = Object.keys(restored.seenBy).filter(userId => restored.seenBy[userId]);
+    return restored;
+  }).filter(Boolean);
+}
+
+function serializeUserForSync(user, userId) {
+  const serialized = JSON.parse(JSON.stringify(user || defaultState.users[userId]));
+  ['flashcards', 'quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+    serialized[collection] = syncCollectionToMap(serialized[collection], `${userId}-${collection}`);
+  });
+  return serialized;
+}
+
+function deserializeUserFromSync(user, userId) {
+  const restored = JSON.parse(JSON.stringify(user || {}));
+  ['flashcards', 'quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+    restored[collection] = syncCollectionToArray(restored[collection]);
+  });
+  return deepMerge(JSON.parse(JSON.stringify(defaultState.users[userId])), restored);
+}
+
 function buildSyncDocument() {
   return {
-    syncSchema: 3,
+    syncSchema: 4,
     version: 1,
-    updatedAt: Date.now(),
+    updatedAt: Number(state.syncMeta?.lastSyncedAt) || 0,
     meta: {
-      usersUpdatedAt: { ...(state.syncMeta?.usersUpdatedAt || { G: 0, R: 0 }) },
-      globalUpdatedAt: state.syncMeta?.globalUpdatedAt || 0,
       resetEpoch: Number(state.syncMeta?.resetEpoch) || 0
     },
     data: {
       users: {
-        G: JSON.parse(JSON.stringify(getUser('G'))),
-        R: JSON.parse(JSON.stringify(getUser('R')))
+        G: serializeUserForSync(getUser('G'), 'G'),
+        R: serializeUserForSync(getUser('R'), 'R')
       },
       deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {} })),
-      questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
+      questionBank: syncCollectionToMap(state.questionBank, 'question'),
       _shared: {
         updatedAt: Number(state.syncMeta?.globalUpdatedAt) || 0,
         streak: state.streak,
@@ -424,23 +465,20 @@ function sanitizeSyncDoc(doc) {
     version: Number(doc.version) || 1,
     updatedAt: Number(doc.updatedAt) || 0,
     meta: {
-      usersUpdatedAt: {
-        G: Number(doc.meta?.usersUpdatedAt?.G) || 0,
-        R: Number(doc.meta?.usersUpdatedAt?.R) || 0
-      },
-      globalUpdatedAt: Number(doc.meta?.globalUpdatedAt) || 0,
+      usersUpdatedAt: { G: 0, R: 0 },
+      globalUpdatedAt: Number(shared.updatedAt) || Number(doc.meta?.globalUpdatedAt) || 0,
       resetEpoch: Number(doc.meta?.resetEpoch) || 0
     },
     data: {
       users: {
-        G: deepMerge(JSON.parse(JSON.stringify(defaultState.users.G)), doc.data?.users?.G || {}),
-        R: deepMerge(JSON.parse(JSON.stringify(defaultState.users.R)), doc.data?.users?.R || {})
+        G: deserializeUserFromSync(doc.data?.users?.G, 'G'),
+        R: deserializeUserFromSync(doc.data?.users?.R, 'R')
       },
       deleted: {
         flashcards: doc.data?.deleted?.flashcards || {},
         questionBank: doc.data?.deleted?.questionBank || {}
       },
-      questionBank: Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : [],
+      questionBank: syncCollectionToArray(doc.data?.questionBank),
       _shared: {
         updatedAt: Number(shared.updatedAt) || Number(doc.meta?.globalUpdatedAt) || 0,
         streak: Number(shared.streak) || 0,
@@ -1071,7 +1109,57 @@ function startSyncRealtime() {
 }
 
 function isCommonSyncDoc(doc) {
-  return Number(doc?.syncSchema) === 3;
+  return Number(doc?.syncSchema) === 4;
+}
+
+function toSyncStorageDoc(doc) {
+  const safe = sanitizeSyncDoc(doc);
+  if (!safe) return buildSyncDocument();
+  return {
+    syncSchema: 4,
+    version: 1,
+    updatedAt: safe.updatedAt || 0,
+    meta: { resetEpoch: safe.meta.resetEpoch || 0 },
+    data: {
+      users: {
+        G: serializeUserForSync(safe.data.users.G, 'G'),
+        R: serializeUserForSync(safe.data.users.R, 'R')
+      },
+      deleted: JSON.parse(JSON.stringify(safe.data.deleted)),
+      questionBank: syncCollectionToMap(safe.data.questionBank, 'question'),
+      _shared: JSON.parse(JSON.stringify(safe.data._shared))
+    }
+  };
+}
+
+function buildSyncPatch(base, target, path = '', patch = {}) {
+  if (JSON.stringify(base) === JSON.stringify(target)) return patch;
+  const baseIsObject = base && typeof base === 'object' && !Array.isArray(base);
+  const targetIsObject = target && typeof target === 'object' && !Array.isArray(target);
+  if (!baseIsObject || !targetIsObject) {
+    if (path) patch[path] = target ?? null;
+    return patch;
+  }
+  const keys = new Set([...Object.keys(base), ...Object.keys(target)]);
+  keys.forEach(key => {
+    const nextPath = path ? `${path}/${key}` : key;
+    if (!(key in target)) {
+      patch[nextPath] = null;
+      return;
+    }
+    buildSyncPatch(base[key], target[key], nextPath, patch);
+  });
+  return patch;
+}
+
+async function patchRemoteDoc(patch) {
+  if (!Object.keys(patch).length) return;
+  const response = await fetchWithSyncTimeout(state.sync.endpoint, {
+    method: 'PATCH',
+    headers: getSyncHeaders(),
+    body: JSON.stringify(patch)
+  });
+  if (!response.ok) throw new Error(`PATCH ${response.status}`);
 }
 
 function getCanonicalNodeUrl(path) {
@@ -1153,14 +1241,14 @@ async function clearLegacyV2Data() {
 async function readCanonicalRemote() {
   const root = await pullRemoteDoc(true);
   if (isCommonSyncDoc(root.doc)) {
-    return { doc: sanitizeSyncDoc(root.doc), etag: root.etag, needsMigration: false };
+    return { doc: sanitizeSyncDoc(root.doc), raw: root.doc, etag: root.etag, needsMigration: false };
   }
   let migrated = root.doc ? sanitizeSyncDoc(root.doc) : null;
   const legacyV2 = await readLegacyV2Doc();
   if (legacyV2) migrated = migrated ? mergeSyncDocs(migrated, legacyV2) : legacyV2;
   if (!migrated) migrated = buildSyncDocument();
-  migrated.syncSchema = 3;
-  return { doc: migrated, etag: root.etag, needsMigration: true };
+  const storageDoc = toSyncStorageDoc(migrated);
+  return { doc: sanitizeSyncDoc(storageDoc), raw: storageDoc, etag: root.etag, needsMigration: true };
 }
 
 async function syncNow(showFeedback = false) {
@@ -1186,30 +1274,45 @@ async function syncNow(showFeedback = false) {
       const localRevision = Number(state.syncMeta?.localRevision) || 0;
       const localDoc = buildSyncDocument();
       const remote = await readCanonicalRemote();
-      const remoteResetWins = (remote.doc.meta?.resetEpoch || 0) > (localDoc.meta?.resetEpoch || 0);
+      const remoteResetEpoch = Number(remote.doc.meta?.resetEpoch) || 0;
+      const remoteResetWins = remoteResetEpoch > (localDoc.meta?.resetEpoch || 0) && remoteResetEpoch >= APP_SESSION_STARTED_AT;
       if (!remoteResetWins && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
         syncRequestedWhileBusy = true;
         return false;
       }
 
       let targetDoc = remote.doc;
-      if (!remoteResetWins && pendingUpdateAt) {
-        targetDoc = mergeSyncDocs(localDoc, remote.doc);
-      }
-      targetDoc.syncSchema = 3;
-
-      const needsWrite = remote.needsMigration || (!remoteResetWins && pendingUpdateAt && getComparableSyncDoc(targetDoc) !== getComparableSyncDoc(remote.doc));
-      if (needsWrite) {
-        if (remote.needsMigration) {
-          const result = await pushRemoteDoc(targetDoc, remote.etag);
-          if (result.conflict) {
-            await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 420) + (attempt * 80)));
-            continue;
-          }
-          clearLegacyV2Data();
-        } else {
-          targetDoc = await pushCanonicalBranches(targetDoc);
+      if (remote.needsMigration) {
+        const migrationLocal = JSON.parse(JSON.stringify(localDoc));
+        if (!remoteResetWins && remoteResetEpoch > (migrationLocal.meta?.resetEpoch || 0)) {
+          migrationLocal.meta.resetEpoch = remoteResetEpoch;
         }
+        const migrationDoc = remoteResetWins
+          ? toSyncStorageDoc(remote.doc)
+          : toSyncStorageDoc(mergeSyncDocs(migrationLocal, remote.doc));
+        const result = await pushRemoteDoc(migrationDoc, remote.etag);
+        if (result.conflict) {
+          await new Promise(resolve => setTimeout(resolve, 180 + Math.floor(Math.random() * 420) + (attempt * 80)));
+          continue;
+        }
+        clearLegacyV2Data();
+        lastRemoteSyncDoc = migrationDoc;
+        targetDoc = sanitizeSyncDoc(migrationDoc);
+      } else if (!remoteResetWins && pendingUpdateAt) {
+        const baseDoc = lastRemoteSyncDoc || remote.raw;
+        const initialLocal = JSON.parse(JSON.stringify(localDoc));
+        if (!lastRemoteSyncDoc && remoteResetEpoch > (initialLocal.meta?.resetEpoch || 0)) {
+          initialLocal.meta.resetEpoch = remoteResetEpoch;
+        }
+        const targetStorage = lastRemoteSyncDoc
+          ? localDoc
+          : toSyncStorageDoc(mergeSyncDocs(initialLocal, remote.doc));
+        await patchRemoteDoc(buildSyncPatch(baseDoc, targetStorage));
+        const confirmed = await pullRemoteDoc(true);
+        lastRemoteSyncDoc = confirmed.doc;
+        targetDoc = sanitizeSyncDoc(confirmed.doc);
+      } else {
+        lastRemoteSyncDoc = remote.raw;
       }
 
       if (!remoteResetWins && (Number(state.syncMeta?.localRevision) || 0) !== localRevision) {
@@ -3127,7 +3230,7 @@ async function resetGlobalData() {
       const nextState = buildResetState({ keepLastSyncedAt: false, resetEpoch, globalUpdatedAt: resetEpoch });
       replaceState(nextState);
       const resetDoc = buildSyncDocument();
-      resetDoc.syncSchema = 3;
+      resetDoc.syncSchema = 4;
       const result = await pushRemoteDoc(resetDoc, remote.etag);
       if (result.conflict) continue;
       clearLegacyV2Data();
