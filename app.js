@@ -3231,8 +3231,8 @@ function addQuizCreateOption(value = '', checked = false) {
   row.className = 'quiz-create-option-row';
   row.innerHTML = `
     <input type="checkbox" class="quiz-create-option-correct" ${checked ? 'checked' : ''} aria-label="Bonne réponse" />
-    <input type="text" class="quiz-create-option-input" placeholder="Proposition ${idx + 1}" value="${escapeHtml(value)}" />
-    <button type="button" class="secondary-button quiz-create-option-remove">Supprimer</button>
+    <input type="text" class="quiz-create-option-input" dir="ltr" placeholder="Proposition ${idx + 1}" value="${escapeHtml(value)}" />
+    <button type="button" class="quiz-create-option-remove" aria-label="Supprimer cette proposition" title="Supprimer cette proposition">×</button>
   `;
   quizCreateOptionsList.appendChild(row);
   const removeBtn = row.querySelector('.quiz-create-option-remove');
@@ -3487,12 +3487,14 @@ function renderQuizRunCard() {
   quizQuestion.textContent = question.question;
   const answerLabel = correctCount === 1 ? '1 bonne réponse' : `${correctCount} bonnes réponses`;
   quizMeta.textContent = `Question ${quizState.index + 1} / ${quizState.questions.length} • ${answerLabel}`;
+  quizQuestion.dir = 'ltr';
   quizOptions.innerHTML = '';
   const multi = correctIndices.length > 1;
   question.options.forEach((option, idx) => {
     const btn = document.createElement('button');
     btn.className = 'option-button';
     btn.type = 'button';
+    btn.dir = 'ltr';
     btn.dataset.index = String(idx);
     btn.textContent = option;
     btn.addEventListener('click', () => selectQuizOption(btn, idx, multi));
@@ -3750,11 +3752,13 @@ function renderMonthlyQuestion() {
     : (question.answer ? [question.options.indexOf(question.answer)] : []);
   const answerLabel = Math.max(1, correctIndices.filter(index => index >= 0).length) === 1 ? '1 bonne réponse' : `${correctIndices.filter(index => index >= 0).length} bonnes réponses`;
   monthlyMeta.textContent = `${question.chapter} • ${question.theme} • ${answerLabel}`;
+  monthlyQuestion.dir = 'ltr';
   monthlyQuestion.textContent = question.question;
   monthlyOptions.innerHTML = '';
   question.options.forEach((option, idx) => {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.dir = 'ltr';
     btn.dataset.index = String(idx);
     btn.textContent = option;
     btn.addEventListener('click', () => selectMonthlyOption(btn, idx, correctIndices.length > 1));
