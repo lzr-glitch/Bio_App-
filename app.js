@@ -1006,6 +1006,7 @@ function applySyncDoc(doc) {
   state.users.R = safe.data.users.R;
   state.deleted = safe.data.deleted;
   state.questionBank = safe.data.questionBank;
+  state.schemas = safe.data.schemas;
   state.streak = safe.data._shared.streak;
   state.pending = safe.data._shared.pending;
   state.jokers = safe.data._shared.jokers;
