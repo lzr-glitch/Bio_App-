@@ -18,7 +18,13 @@ const V5_OUTBOX_BACKUP_KEY = 'revisio-ibo-v5-outbox';
 const V5_OUTBOX_DB_NAME = 'revisio-ibo-v5-sync';
 const V5_OUTBOX_STORE = 'outbox';
 const WEEKLY_FINALIZATION_HOUR = 14;
-const pages = ['home','reading','flashcards','library','work','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
+const pages = ['home','reading','flashcards','library','schemas','schema-editor','schema-tests','schema-test','test','quiz','quiz-create','quiz-setup','quiz-run','profile','stats','chapters','weaknesses','badges','recap','settings'];
+const SCHEMA_CANVAS_WIDTH = 1000;
+const SCHEMA_CANVAS_HEIGHT = 650;
+const SCHEMA_MAX_ELEMENTS = 60;
+const SCHEMA_MAX_ANSWER_BOXES = 24;
+const SCHEMA_COLORS = ['#2563eb', '#dc2626', '#7c3aed', '#ca8a04', '#16a34a', '#ea580c'];
+const SCHEMA_FILL_OPACITIES = Object.freeze({ none: 0, light: 0.2, solid: 0.62 });
 
 function getDayKeyFor(date = new Date(), resetHour = 4) {
   const local = new Date(date);
@@ -39,12 +45,13 @@ const defaultState = {
   lastMonth: getDayKeyFor().slice(0, 7),
   jokers: 0,
   dailyThresholds: { reading: 5, cards: 3, tested: 1 },
-  deleted: { flashcards: {}, questionBank: {} },
+  deleted: { flashcards: {}, questionBank: {}, schemas: {} },
   users: {
-    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [], weeklyAwards: {} },
-    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], workHistory: [], weeklyAwards: {} }
+    G: { name: 'G', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], weeklyAwards: {} },
+    R: { name: 'R', jokers: 0, chapters: {}, flashcards: [], quizzes: [], reading: {}, readingSeconds: {}, tests: [], daily: {}, monthlyTests: [], badges: [], weeklyAwards: {} }
   },
-  questionBank: []
+  questionBank: [],
+  schemas: []
 };
 
 const state = loadState();
@@ -88,19 +95,29 @@ const manualMinutes = document.getElementById('manual-minutes');
 const setMinutes = document.getElementById('set-minutes');
 const readingHistory = document.getElementById('reading-history');
 
-const workStartButton = document.getElementById('work-start-timer');
-const workHistoryButton = document.getElementById('work-show-history');
-const workTimerCard = document.getElementById('work-timer-card');
-const workTimerDisplay = document.getElementById('work-timer-display');
-const workTimerStatus = document.getElementById('work-timer-status');
-const workTimerStart = document.getElementById('work-timer-start');
-const workTimerPause = document.getElementById('work-timer-pause');
-const workTimerStop = document.getElementById('work-timer-stop');
-const workNoteCard = document.getElementById('work-note-card');
-const workNoteText = document.getElementById('work-note-text');
-const workNoteSend = document.getElementById('work-note-send');
-const workNoteSave = document.getElementById('work-note-save');
-const workHistoryList = document.getElementById('work-history-list');
+const schemaCreateButton = document.getElementById('schema-create');
+const schemaOpenTestsButton = document.getElementById('schema-open-tests');
+const schemaLibraryList = document.getElementById('schema-library-list');
+const schemaEditorHeading = document.getElementById('schema-editor-heading');
+const schemaTitleInput = document.getElementById('schema-title');
+const schemaExplanationInput = document.getElementById('schema-explanation');
+const schemaToolButtons = document.getElementById('schema-tool-buttons');
+const schemaColorButtons = document.getElementById('schema-color-buttons');
+const schemaFillMode = document.getElementById('schema-fill-mode');
+const schemaTextInput = document.getElementById('schema-text-input');
+const schemaAnswerInput = document.getElementById('schema-answer-input');
+const schemaEditorStatus = document.getElementById('schema-editor-status');
+const schemaEditorCanvas = document.getElementById('schema-editor-canvas');
+const schemaDeleteElementButton = document.getElementById('schema-delete-element');
+const schemaDeleteButton = document.getElementById('schema-delete');
+const schemaSaveButton = document.getElementById('schema-save');
+const schemaTestList = document.getElementById('schema-test-list');
+const schemaTestHeading = document.getElementById('schema-test-heading');
+const schemaTestExplanation = document.getElementById('schema-test-explanation');
+const schemaTestCanvas = document.getElementById('schema-test-canvas');
+const schemaTestInputs = document.getElementById('schema-test-inputs');
+const schemaTestStatus = document.getElementById('schema-test-status');
+const schemaFinishTestButton = document.getElementById('schema-finish-test');
 
 const saveCardBtn = document.getElementById('save-card');
 const clearCardBtn = document.getElementById('clear-card');
@@ -183,7 +200,7 @@ const myTotalTests = document.getElementById('my-total-tests');
 const myTotalQuizzes = document.getElementById('my-total-quizzes');
 const mySuccessRate = document.getElementById('my-success-rate');
 const myTotalReading = document.getElementById('my-total-reading');
-const myTotalWork = document.getElementById('my-total-work');
+const mySchemaPoints = document.getElementById('my-schema-points');
 const myWeeklyWins = document.getElementById('my-weekly-wins');
 const otherJokers = document.getElementById('other-jokers');
 const otherTotalCards = document.getElementById('other-total-cards');
@@ -192,7 +209,7 @@ const otherTotalTests = document.getElementById('other-total-tests');
 const otherTotalQuizzes = document.getElementById('other-total-quizzes');
 const otherSuccessRate = document.getElementById('other-success-rate');
 const otherTotalReading = document.getElementById('other-total-reading');
-const otherTotalWork = document.getElementById('other-total-work');
+const otherSchemaPoints = document.getElementById('other-schema-points');
 const otherWeeklyWins = document.getElementById('other-weekly-wins');
 const adminSyncCard = document.getElementById('admin-sync-card');
 const syncDataNowBtn = document.getElementById('sync-data-now');
@@ -228,10 +245,9 @@ const saveAdminSettings = document.getElementById('save-admin-settings');
 let timerInterval = null;
 let timerSeconds = 0;
 let isTimerRunning = false;
-let workTimerInterval = null;
-let workTimerSeconds = 0;
-let isWorkTimerRunning = false;
-let currentWorkSession = null;
+let schemaEditorState = null;
+let schemaEditorPointer = null;
+let schemaTestSession = null;
 let weeklyFinalizationInFlight = false;
 let weeklyFinalizationTimer = null;
 let reviewQueue = [];
@@ -287,7 +303,11 @@ function parseState(raw) {
   if (!raw) return JSON.parse(JSON.stringify(defaultState));
   try {
     const parsed = JSON.parse(raw);
-    return deepMerge(JSON.parse(JSON.stringify(defaultState)), parsed);
+    const next = deepMerge(JSON.parse(JSON.stringify(defaultState)), parsed);
+    ['G', 'R'].forEach(userId => {
+      if (next.users?.[userId]) delete next.users[userId].workHistory;
+    });
+    return next;
   } catch (e) {
     return JSON.parse(JSON.stringify(defaultState));
   }
@@ -449,11 +469,200 @@ function restoreSyncCollection(value) {
   }).filter(Boolean);
 }
 
+function clampSchemaNumber(value, minimum, maximum, fallback = minimum) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(maximum, Math.max(minimum, numeric));
+}
+
+function getSafeSchemaId(value, fallback) {
+  const cleaned = String(value || fallback || '')
+    .replace(/[.#$\[\]/]/g, '-')
+    .replace(/[^a-zA-Z0-9_-]/g, '-');
+  return cleaned.slice(0, 120) || fallback;
+}
+
+function normalizeSchemaColor(value, fallback = SCHEMA_COLORS[0]) {
+  const color = String(value || '').toLowerCase();
+  return SCHEMA_COLORS.includes(color) ? color : fallback;
+}
+
+function normalizeSchemaText(value, limit) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, limit);
+}
+
+function normalizeSchemaExplanation(value) {
+  return String(value || '').trim().replace(/\r\n?/g, '\n').slice(0, 2000);
+}
+
+function normalizeSchemaAnswers(value) {
+  const rawAnswers = Array.isArray(value) ? value : String(value || '').split(';');
+  const seen = new Set();
+  return rawAnswers
+    .map(answer => normalizeSchemaText(answer, 120))
+    .filter(answer => {
+      const key = answer.toLocaleLowerCase('fr-FR');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function normalizeSchemaElement(rawElement, index = 0) {
+  if (!rawElement || typeof rawElement !== 'object') return null;
+  const type = ['rect', 'ellipse', 'line', 'arrow', 'text', 'answer'].includes(rawElement.type)
+    ? rawElement.type
+    : null;
+  if (!type) return null;
+  const id = getSafeSchemaId(rawElement.id, `schema-element-${index + 1}`);
+  const stroke = normalizeSchemaColor(rawElement.stroke || rawElement.color);
+  const fill = normalizeSchemaColor(rawElement.fill || rawElement.fillColor, stroke);
+  const fillOpacity = clampSchemaNumber(rawElement.fillOpacity, 0, 1, 0);
+  const strokeWidth = clampSchemaNumber(rawElement.strokeWidth, 1, 12, 4);
+  if (type === 'line' || type === 'arrow') {
+    return {
+      id,
+      type,
+      x1: clampSchemaNumber(rawElement.x1, 0, SCHEMA_CANVAS_WIDTH, 120),
+      y1: clampSchemaNumber(rawElement.y1, 0, SCHEMA_CANVAS_HEIGHT, 120),
+      x2: clampSchemaNumber(rawElement.x2, 0, SCHEMA_CANVAS_WIDTH, 360),
+      y2: clampSchemaNumber(rawElement.y2, 0, SCHEMA_CANVAS_HEIGHT, 240),
+      stroke,
+      strokeWidth
+    };
+  }
+  if (type === 'text') {
+    const text = normalizeSchemaText(rawElement.text || rawElement.content, 120);
+    if (!text) return null;
+    return {
+      id,
+      type,
+      x: clampSchemaNumber(rawElement.x, 0, SCHEMA_CANVAS_WIDTH, 120),
+      y: clampSchemaNumber(rawElement.y, 20, SCHEMA_CANVAS_HEIGHT, 120),
+      text,
+      stroke,
+      fontSize: clampSchemaNumber(rawElement.fontSize, 14, 42, 24)
+    };
+  }
+  const width = clampSchemaNumber(rawElement.width, 32, 600, type === 'answer' ? 220 : 180);
+  const height = clampSchemaNumber(rawElement.height, 28, 420, type === 'answer' ? 64 : 120);
+  const x = clampSchemaNumber(rawElement.x, 0, SCHEMA_CANVAS_WIDTH - width, 120);
+  const y = clampSchemaNumber(rawElement.y, 0, SCHEMA_CANVAS_HEIGHT - height, 120);
+  const element = { id, type, x, y, width, height, stroke, fill, fillOpacity, strokeWidth };
+  if (type === 'answer') {
+    element.answers = normalizeSchemaAnswers(rawElement.answers || rawElement.answer);
+  }
+  return element;
+}
+
+function normalizeSchemaAttempt(rawAttempt, id) {
+  if (!rawAttempt || typeof rawAttempt !== 'object') return null;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(rawAttempt.date) ? rawAttempt.date : null;
+  if (!date) return null;
+  const total = Math.max(1, Math.round(Number(rawAttempt.total) || 1));
+  const correct = Math.min(total, Math.max(0, Math.round(Number(rawAttempt.correct) || 0)));
+  return {
+    id: getSafeSchemaId(rawAttempt.id, id),
+    date,
+    completedAt: Math.max(0, Number(rawAttempt.completedAt) || 0),
+    score: Math.round(clampSchemaNumber(rawAttempt.score, 0, 100, 0)),
+    correct,
+    total,
+    points: correct,
+    revision: Math.max(1, Math.round(Number(rawAttempt.revision) || 1))
+  };
+}
+
+function normalizeSchemaResult(rawResult, userId) {
+  const raw = rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult) ? rawResult : {};
+  const revision = Math.max(1, Math.round(Number(raw.revision) || 1));
+  const bestScore = Math.round(clampSchemaNumber(raw.bestScore, 0, 100, 0));
+  const bestScores = {};
+  Object.entries(raw.bestScores || {}).forEach(([revisionKey, score]) => {
+    if (!/^\d+$/.test(revisionKey)) return;
+    bestScores[String(Math.max(1, Number(revisionKey)))] = Math.round(clampSchemaNumber(score, 0, 100, 0));
+  });
+  if (bestScore > 0 && bestScores[String(revision)] == null) bestScores[String(revision)] = bestScore;
+  const rewardAttempts = {};
+  Object.entries(raw.rewardAttempts || {}).forEach(([day, dayAttempts]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !dayAttempts || typeof dayAttempts !== 'object') return;
+    const normalizedAttempts = {};
+    Object.entries(dayAttempts).forEach(([attemptId, rawAttempt]) => {
+      const attempt = normalizeSchemaAttempt(rawAttempt, attemptId);
+      if (attempt && attempt.date === day) normalizedAttempts[attempt.id] = attempt;
+    });
+    if (Object.keys(normalizedAttempts).length) rewardAttempts[day] = normalizedAttempts;
+  });
+  return {
+    user: userId,
+    bestScore,
+    bestScores,
+    revision,
+    lastScore: Math.round(clampSchemaNumber(raw.lastScore, 0, 100, 0)),
+    lastCompletedAt: Math.max(0, Number(raw.lastCompletedAt) || 0),
+    rewardAttempts
+  };
+}
+
+function normalizeSchema(rawSchema, index = 0) {
+  if (!rawSchema || typeof rawSchema !== 'object') return null;
+  const elements = (Array.isArray(rawSchema.elements) ? rawSchema.elements : Object.values(rawSchema.elements || {}))
+    .map((element, elementIndex) => normalizeSchemaElement(element, elementIndex))
+    .filter(Boolean)
+    .slice(0, SCHEMA_MAX_ELEMENTS);
+  const answerCount = elements.filter(element => element.type === 'answer' && element.answers.length).length;
+  const createdAt = typeof rawSchema.createdAt === 'string' ? rawSchema.createdAt : '1970-01-01T00:00:00.000Z';
+  const updatedAt = typeof rawSchema.updatedAt === 'string' ? rawSchema.updatedAt : createdAt;
+  const createdBy = rawSchema.createdBy === 'R' ? 'R' : 'G';
+  const revision = Math.max(1, Math.round(Number(rawSchema.revision) || 1));
+  return {
+    id: getSafeSchemaId(rawSchema.id, `schema-legacy-${index + 1}`),
+    title: normalizeSchemaText(rawSchema.title, 120) || 'Schéma sans titre',
+    explanation: normalizeSchemaExplanation(rawSchema.explanation),
+    createdBy,
+    createdAt,
+    updatedAt,
+    revision,
+    creationPoints: Math.max(0, Math.round(Number(rawSchema.creationPoints) || Math.ceil(answerCount / 2))),
+    elements,
+    results: {
+      G: normalizeSchemaResult(rawSchema.results?.G, 'G'),
+      R: normalizeSchemaResult(rawSchema.results?.R, 'R')
+    }
+  };
+}
+
+function normalizeSchemas(value, deleted = {}) {
+  const source = Array.isArray(value) ? value : Object.values(value || {});
+  const seen = new Set();
+  return source
+    .map((schema, index) => normalizeSchema(schema, index))
+    .filter(schema => {
+      if (!schema || deleted?.[schema.id] || seen.has(schema.id)) return false;
+      seen.add(schema.id);
+      return true;
+    })
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')) || left.id.localeCompare(right.id));
+}
+
+function getSchemas() {
+  state.schemas = normalizeSchemas(state.schemas, state.deleted?.schemas || {});
+  return state.schemas;
+}
+
 function restoreV4User(user, userId) {
   const restored = JSON.parse(JSON.stringify(user || {}));
-  ['flashcards', 'quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+  ['flashcards', 'quizzes', 'tests', 'monthlyTests'].forEach(collection => {
     restored[collection] = restoreSyncCollection(restored[collection]);
   });
+  delete restored.workHistory;
+  return deepMerge(JSON.parse(JSON.stringify(defaultState.users[userId])), restored);
+}
+
+function restoreSyncUser(user, userId) {
+  const restored = JSON.parse(JSON.stringify(user || {}));
+  delete restored.workHistory;
   return deepMerge(JSON.parse(JSON.stringify(defaultState.users[userId])), restored);
 }
 
@@ -472,8 +681,9 @@ function buildSyncDocument() {
         G: JSON.parse(JSON.stringify(getUser('G'))),
         R: JSON.parse(JSON.stringify(getUser('R')))
       },
-      deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {} })),
+      deleted: JSON.parse(JSON.stringify(state.deleted || { flashcards: {}, questionBank: {}, schemas: {} })),
       questionBank: JSON.parse(JSON.stringify(state.questionBank || [])),
+      schemas: JSON.parse(JSON.stringify(normalizeSchemas(state.schemas, state.deleted?.schemas || {}))),
       _shared: {
         updatedAt: Number(state.syncMeta?.globalUpdatedAt) || 0,
         streak: state.streak,
@@ -506,14 +716,16 @@ function sanitizeSyncDoc(doc) {
     },
     data: {
       users: {
-        G: isV4 ? restoreV4User(doc.data?.users?.G, 'G') : deepMerge(JSON.parse(JSON.stringify(defaultState.users.G)), doc.data?.users?.G || {}),
-        R: isV4 ? restoreV4User(doc.data?.users?.R, 'R') : deepMerge(JSON.parse(JSON.stringify(defaultState.users.R)), doc.data?.users?.R || {})
+        G: isV4 ? restoreV4User(doc.data?.users?.G, 'G') : restoreSyncUser(doc.data?.users?.G, 'G'),
+        R: isV4 ? restoreV4User(doc.data?.users?.R, 'R') : restoreSyncUser(doc.data?.users?.R, 'R')
       },
       deleted: {
         flashcards: doc.data?.deleted?.flashcards || {},
-        questionBank: doc.data?.deleted?.questionBank || {}
+        questionBank: doc.data?.deleted?.questionBank || {},
+        schemas: doc.data?.deleted?.schemas || {}
       },
       questionBank: isV4 ? restoreSyncCollection(doc.data?.questionBank) : (Array.isArray(doc.data?.questionBank) ? doc.data.questionBank : []),
+      schemas: normalizeSchemas(isV4 ? restoreSyncCollection(doc.data?.schemas) : doc.data?.schemas, doc.data?.deleted?.schemas || {}),
       _shared: {
         updatedAt: Number(shared.updatedAt) || Number(doc.meta?.globalUpdatedAt) || 0,
         streak: Number(shared.streak) || 0,
@@ -662,7 +874,6 @@ function mergeUsers(localUser, remoteUser, deleted = {}) {
     tests: mergeById((local.tests || []).map(item => normalizeEventItem(item, 'test')), (remote.tests || []).map(item => normalizeEventItem(item, 'test'))),
     monthlyTests: mergeById((local.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly')), (remote.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'))),
     badges: [...new Set([...(local.badges || []), ...(remote.badges || [])])],
-    workHistory: mergeById((local.workHistory || []).map(item => normalizeEventItem(item, 'work')), (remote.workHistory || []).map(item => normalizeEventItem(item, 'work'))),
     weeklyAwards: mergeWeeklyAwards(local.weeklyAwards, remote.weeklyAwards)
   };
 }
@@ -673,7 +884,7 @@ function applyDeletedToUser(user, deleted = {}) {
   safeUser.quizzes = (safeUser.quizzes || []).map(item => normalizeEventItem(item, 'quiz'));
   safeUser.tests = (safeUser.tests || []).map(item => normalizeEventItem(item, 'test'));
   safeUser.monthlyTests = (safeUser.monthlyTests || []).map(item => normalizeEventItem(item, 'monthly'));
-  safeUser.workHistory = (safeUser.workHistory || []).map(item => normalizeEventItem(item, 'work'));
+  delete safeUser.workHistory;
   safeUser.weeklyAwards = normalizeWeeklyAwards(safeUser.weeklyAwards);
   return safeUser;
 }
@@ -884,8 +1095,9 @@ function deserializeV5Flashcard(rawCard, index) {
 
 function serializeV5User(rawUser, userId) {
   const user = deepMerge(cloneV5Value(defaultState.users[userId]), cloneV5Value(rawUser || {}));
+  delete user.workHistory;
   user.flashcards = v5CollectionToMap(user.flashcards || [], 'card', serializeV5Flashcard);
-  ['quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+  ['quizzes', 'tests', 'monthlyTests'].forEach(collection => {
     user[collection] = v5CollectionToMap(user[collection] || [], collection.slice(0, -1), item => cloneV5Value(item));
   });
   return user;
@@ -893,18 +1105,27 @@ function serializeV5User(rawUser, userId) {
 
 function deserializeV5User(rawUser, userId) {
   const user = cloneV5Value(rawUser || {});
+  delete user.workHistory;
   user.flashcards = v5MapToCollection(user.flashcards || {}, 'card', deserializeV5Flashcard);
-  ['quizzes', 'tests', 'monthlyTests', 'workHistory'].forEach(collection => {
+  ['quizzes', 'tests', 'monthlyTests'].forEach(collection => {
     user[collection] = v5MapToCollection(user[collection] || {}, collection.slice(0, -1), item => cloneV5Value(item));
   });
   return deepMerge(cloneV5Value(defaultState.users[userId]), user);
+}
+
+function serializeV5Schema(rawSchema, index) {
+  return normalizeSchema(cloneV5Value(rawSchema || {}), index);
+}
+
+function deserializeV5Schema(rawSchema, index) {
+  return normalizeSchema(cloneV5Value(rawSchema || {}), index);
 }
 
 function buildV5DocumentFromState(sourceState = state) {
   const sourceUsers = sourceState.users || {};
   const sourceMeta = sourceState.syncMeta || {};
   return {
-    syncSchema: 5,
+    syncSchema: 6,
     version: 1,
     meta: {
       resetEpoch: Number(sourceMeta.resetEpoch) || 0,
@@ -915,8 +1136,9 @@ function buildV5DocumentFromState(sourceState = state) {
         G: serializeV5User(sourceUsers.G, 'G'),
         R: serializeV5User(sourceUsers.R, 'R')
       },
-      deleted: cloneV5Value(sourceState.deleted || { flashcards: {}, questionBank: {} }),
+      deleted: cloneV5Value(sourceState.deleted || { flashcards: {}, questionBank: {}, schemas: {} }),
       questionBank: v5CollectionToMap(sourceState.questionBank || [], 'question', item => cloneV5Value(item)),
+      schemas: v5CollectionToMap(normalizeSchemas(sourceState.schemas, sourceState.deleted?.schemas || {}), 'schema', serializeV5Schema),
       _shared: {
         streak: Number(sourceState.streak) || 0,
         pending: Boolean(sourceState.pending),
@@ -936,6 +1158,7 @@ function buildV5DocumentFromSyncDoc(syncDoc) {
     users: safe.data.users,
     deleted: safe.data.deleted,
     questionBank: safe.data.questionBank,
+    schemas: safe.data.schemas,
     streak: safe.data._shared.streak,
     pending: safe.data._shared.pending,
     jokers: safe.data._shared.jokers,
@@ -952,10 +1175,10 @@ function buildV5DocumentFromSyncDoc(syncDoc) {
 }
 
 function normalizeV5Document(rawDocument) {
-  if (!rawDocument || Number(rawDocument.syncSchema) !== 5 || !isV5Record(rawDocument.data)) return null;
+  if (!rawDocument || ![5, 6].includes(Number(rawDocument.syncSchema)) || !isV5Record(rawDocument.data)) return null;
   const rawData = rawDocument.data || {};
   const normalized = {
-    syncSchema: 5,
+    syncSchema: 6,
     version: 1,
     meta: {
       resetEpoch: Number(rawDocument.meta?.resetEpoch) || 0,
@@ -968,9 +1191,11 @@ function normalizeV5Document(rawDocument) {
       },
       deleted: {
         flashcards: cloneV5Value(rawData.deleted?.flashcards || {}),
-        questionBank: cloneV5Value(rawData.deleted?.questionBank || {})
+        questionBank: cloneV5Value(rawData.deleted?.questionBank || {}),
+        schemas: cloneV5Value(rawData.deleted?.schemas || {})
       },
       questionBank: v5MapToCollection(rawData.questionBank || {}, 'question', item => cloneV5Value(item)),
+      schemas: normalizeSchemas(v5MapToCollection(rawData.schemas || {}, 'schema', deserializeV5Schema), rawData.deleted?.schemas || {}),
       _shared: {
         streak: Number(rawData._shared?.streak) || 0,
         pending: Boolean(rawData._shared?.pending),
@@ -1014,6 +1239,7 @@ function v5DocumentToSyncDoc(document) {
       },
       deleted: cloneV5Value(safe.data.deleted),
       questionBank: v5MapToCollection(safe.data.questionBank, 'question', item => cloneV5Value(item)),
+      schemas: v5MapToCollection(safe.data.schemas, 'schema', deserializeV5Schema),
       _shared: cloneV5Value(safe.data._shared)
     }
   };
@@ -1464,12 +1690,39 @@ function startWeeklyAwardScheduler() {
   void finalizeWeeklyAwardIfDue();
 }
 
+function mergeV6SchemaBestScores(currentDocument, nextDocument, patch) {
+  Object.entries(patch || {}).forEach(([path, value]) => {
+    const match = path.match(/^data\/schemas\/([^/]+)\/results\/([GR])\/bestScores\/(\d+)$/);
+    if (!match || value === null) return;
+    const [, schemaId, userId, revision] = match;
+    const currentScore = Number(currentDocument.data?.schemas?.[schemaId]?.results?.[userId]?.bestScores?.[revision]) || 0;
+    const nextScore = Number(nextDocument.data?.schemas?.[schemaId]?.results?.[userId]?.bestScores?.[revision]) || 0;
+    if (currentScore > nextScore && nextDocument.data?.schemas?.[schemaId]?.results?.[userId]?.bestScores) {
+      nextDocument.data.schemas[schemaId].results[userId].bestScores[revision] = currentScore;
+    }
+  });
+  return nextDocument;
+}
+
+function filterV5OperationPatch(currentDocument, patch) {
+  const filtered = {};
+  Object.entries(patch || {}).forEach(([path, value]) => {
+    if (path.includes('/workHistory')) return;
+    if (path === 'syncSchema' && Number(value) < 6) return;
+    const schemaMatch = path.match(/^data\/schemas\/([^/]+)(?:\/|$)/);
+    if (schemaMatch && currentDocument.data?.deleted?.schemas?.[schemaMatch[1]]) return;
+    filtered[path] = value;
+  });
+  return filtered;
+}
+
 async function commitV5Operation(operation) {
   const result = await firebaseV5.modules.runTransaction(firebaseV5.rootRef, current => {
     const currentDocument = normalizeV5Document(current);
     if (!currentDocument) return;
     if (Number(currentDocument.meta.resetEpoch) !== Number(operation.resetEpoch)) return;
-    return applyV5Patch(currentDocument, operation.patch);
+    const patch = filterV5OperationPatch(currentDocument, operation.patch);
+    return mergeV6SchemaBestScores(currentDocument, applyV5Patch(currentDocument, patch), patch);
   }, { applyLocally: false });
   const document = normalizeV5Document(result.snapshot?.val?.());
   if (result.committed && document) return { committed: true, document };
@@ -2098,7 +2351,6 @@ function getUser(id) {
       daily: {},
       monthlyTests: [],
       badges: [],
-      workHistory: [],
       weeklyAwards: {}
     };
   }
@@ -2111,7 +2363,7 @@ function getUser(id) {
   if (!user.daily || typeof user.daily !== 'object') user.daily = {};
   if (!Array.isArray(user.monthlyTests)) user.monthlyTests = [];
   if (!Array.isArray(user.badges)) user.badges = [];
-  if (!Array.isArray(user.workHistory)) user.workHistory = [];
+  delete user.workHistory;
   if (!user.weeklyAwards || typeof user.weeklyAwards !== 'object' || Array.isArray(user.weeklyAwards)) user.weeklyAwards = {};
   if (!user.chapters || typeof user.chapters !== 'object') user.chapters = {};
   return user;
@@ -2228,7 +2480,10 @@ function goToPage(page, preserveTarget = false) {
   if (page === 'stats') renderStats();
   if (page === 'badges') renderBadges();
   if (page === 'settings') renderSettings();
-  if (page === 'work') renderWorkHistory();
+  if (page === 'schemas') renderSchemasHome();
+  if (page === 'schema-editor') renderSchemaEditor();
+  if (page === 'schema-tests') renderSchemaTestList();
+  if (page === 'schema-test') renderSchemaTestSession();
   if (page === 'quiz') renderQuizStatus();
   if (page === 'quiz-create') {
     ensureQuizCreateOptions();
@@ -2241,7 +2496,7 @@ function goToPage(page, preserveTarget = false) {
 }
 
 function applyPageTheme(page) {
-  const themeClasses = ['theme-default', 'theme-read', 'theme-flashcards', 'theme-review', 'theme-quiz', 'theme-library', 'theme-work'];
+  const themeClasses = ['theme-default', 'theme-read', 'theme-flashcards', 'theme-review', 'theme-quiz', 'theme-library', 'theme-schemas'];
   document.body.classList.remove(...themeClasses);
   const pageTheme = {
     reading: 'theme-read',
@@ -2252,7 +2507,10 @@ function applyPageTheme(page) {
     'quiz-setup': 'theme-quiz',
     'quiz-run': 'theme-quiz',
     library: 'theme-library',
-    work: 'theme-work'
+    schemas: 'theme-schemas',
+    'schema-editor': 'theme-schemas',
+    'schema-tests': 'theme-schemas',
+    'schema-test': 'theme-schemas'
   };
   document.body.classList.add(pageTheme[page] || 'theme-default');
 }
@@ -2277,6 +2535,8 @@ function renderApp() {
   renderReading();
   renderFlashcards();
   renderLibrary();
+  renderSchemasHome();
+  renderSchemaTestList();
   renderProfile();
   renderStats();
   renderChapters();
@@ -2284,12 +2544,6 @@ function renderApp() {
   renderBadges();
   renderRecap();
   renderQuizStatus();
-}
-
-function sumWorkLast7(user) {
-  const last7 = getLastDays(7);
-  const seconds = getWorkSecondsForPeriod(user, { start: last7[last7.length - 1], end: last7[0] });
-  return Math.floor(seconds / 60);
 }
 
 function updateHome() {
@@ -2588,124 +2842,848 @@ function renderLibrary() {
   });
 }
 
-function formatDuration(seconds) {
-  const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-  const secs = String(seconds % 60).padStart(2, '0');
-  return `${mins}:${secs}`;
+function getSchemaById(schemaId) {
+  return getSchemas().find(schema => schema.id === schemaId) || null;
 }
 
-function renderWorkHistory() {
-  const user = getUser(state.currentUser);
-  const history = user.workHistory || [];
-  workHistoryList.innerHTML = '';
-  if (history.length === 0) {
-    workHistoryList.innerHTML = '<div class="history-item"><span>Aucun travail encore</span></div>';
+function canEditSchema(schema) {
+  return Boolean(schema && schema.createdBy === state.currentUser);
+}
+
+function getSchemaAnswerElements(schema) {
+  return (schema?.elements || []).filter(element => element.type === 'answer' && element.answers?.length);
+}
+
+function getSchemaCreatedDay(schema) {
+  const created = new Date(schema?.createdAt || 0);
+  return Number.isNaN(created.getTime()) ? null : toLocalDateKey(created);
+}
+
+function getSchemaResult(schema, userId) {
+  return normalizeSchemaResult(schema?.results?.[userId], userId);
+}
+
+function getSchemaAttemptEntriesForDay(schema, userId, day) {
+  const result = getSchemaResult(schema, userId);
+  return Object.values(result.rewardAttempts?.[day] || {})
+    .map((attempt, index) => normalizeSchemaAttempt(attempt, 'attempt-' + (index + 1)))
+    .filter(Boolean)
+    .sort((left, right) => (left.completedAt - right.completedAt) || left.id.localeCompare(right.id));
+}
+
+function getSchemaRewardedAttemptsForPeriod(schema, userId, period = {}) {
+  const result = getSchemaResult(schema, userId);
+  return Object.keys(result.rewardAttempts || {})
+    .filter(day => isDayInPeriod(day, period))
+    .flatMap(day => getSchemaAttemptEntriesForDay(schema, userId, day).slice(0, 3));
+}
+
+function getSchemaCreationPointsForPeriod(userId, period = {}, schemas = getSchemas()) {
+  return schemas.reduce((total, schema) => {
+    if (schema.createdBy !== userId || !isDayInPeriod(getSchemaCreatedDay(schema), period)) return total;
+    return total + Math.max(0, Number(schema.creationPoints) || 0);
+  }, 0);
+}
+
+function getSchemaTestPointsForPeriod(userId, period = {}, schemas = getSchemas()) {
+  return schemas.reduce((total, schema) => (
+    total + getSchemaRewardedAttemptsForPeriod(schema, userId, period)
+      .reduce((points, attempt) => points + Math.max(0, Number(attempt.points) || 0), 0)
+  ), 0);
+}
+
+function getSchemaPointsForPeriod(userId, period = {}, schemas = getSchemas()) {
+  return getSchemaCreationPointsForPeriod(userId, period, schemas) + getSchemaTestPointsForPeriod(userId, period, schemas);
+}
+
+function getSchemaBestScore(schema, userId) {
+  const result = getSchemaResult(schema, userId);
+  const revisionScore = Number(result.bestScores?.[String(schema.revision)]);
+  if (Number.isFinite(revisionScore)) return Math.round(clampSchemaNumber(revisionScore, 0, 100, 0));
+  return result.revision === schema.revision ? result.bestScore : 0;
+}
+
+function getSchemaRewardAttemptsRemaining(schema, userId, day = getToday()) {
+  return Math.max(0, 3 - Math.min(3, getSchemaAttemptEntriesForDay(schema, userId, day).length));
+}
+
+function pluralizeSchemaCount(count, singular, plural) {
+  return String(count) + ' ' + (count === 1 ? singular : plural);
+}
+
+function createSchemaLibraryCard(schema, showAttempts = false) {
+  const answerCount = getSchemaAnswerElements(schema).length;
+  const bestScore = getSchemaBestScore(schema, state.currentUser);
+  const card = document.createElement('article');
+  card.className = 'schema-library-item';
+  const ownerLabel = schema.createdBy === state.currentUser ? 'toi' : schema.createdBy;
+  card.innerHTML = '<div class="schema-library-main">'
+    + '<div class="schema-library-title"><strong>' + escapeHtml(schema.title) + '</strong><span>Créé par ' + escapeHtml(ownerLabel) + '</span></div>'
+    + '<span>' + pluralizeSchemaCount(answerCount, 'case-réponse', 'cases-réponses') + ' · +' + schema.creationPoints + ' points à la création</span>'
+    + '<span>Ton meilleur score : <strong>' + bestScore + '%</strong></span>'
+    + '</div>';
+  if (showAttempts) {
+    const remaining = getSchemaRewardAttemptsRemaining(schema, state.currentUser);
+    const attemptHint = document.createElement('span');
+    attemptHint.className = 'schema-attempt-hint';
+    attemptHint.textContent = remaining
+      ? pluralizeSchemaCount(remaining, 'essai avec points restant aujourd’hui', 'essais avec points restants aujourd’hui')
+      : 'Les points sont plafonnés pour ce schéma aujourd’hui.';
+    card.appendChild(attemptHint);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'schema-card-actions';
+  const testButton = document.createElement('button');
+  testButton.type = 'button';
+  testButton.className = 'secondary-button small';
+  testButton.dataset.schemaAction = 'test';
+  testButton.dataset.schemaId = schema.id;
+  testButton.textContent = 'Tester';
+  actions.appendChild(testButton);
+  if (canEditSchema(schema)) {
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'secondary-button small';
+    editButton.dataset.schemaAction = 'edit';
+    editButton.dataset.schemaId = schema.id;
+    editButton.textContent = 'Modifier';
+    actions.appendChild(editButton);
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'schema-delete-button';
+    deleteButton.dataset.schemaAction = 'delete';
+    deleteButton.dataset.schemaId = schema.id;
+    deleteButton.setAttribute('aria-label', 'Supprimer ' + schema.title);
+    deleteButton.textContent = '×';
+    actions.appendChild(deleteButton);
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+function renderSchemasHome() {
+  if (!schemaLibraryList) return;
+  const schemas = getSchemas();
+  schemaLibraryList.innerHTML = '';
+  if (!schemas.length) {
+    schemaLibraryList.innerHTML = '<div class="history-item"><span>Aucun schéma pour le moment</span><strong>Crée le premier.</strong></div>';
     return;
   }
-  history.forEach(entry => {
-    const item = document.createElement('div');
-    item.className = 'history-item';
-    const target = entry.sentToOther ? "Envoyé à l'autre" : 'Garder pour moi';
-    item.innerHTML = `<span>${entry.date} • ${formatDuration(entry.duration)} • ${target}</span>
-      <strong>${entry.note || 'Aucune note'}</strong>`;
-    workHistoryList.appendChild(item);
+  schemas.forEach(schema => schemaLibraryList.appendChild(createSchemaLibraryCard(schema)));
+}
+
+function renderSchemaTestList() {
+  if (!schemaTestList) return;
+  const schemas = getSchemas();
+  schemaTestList.innerHTML = '';
+  if (!schemas.length) {
+    schemaTestList.innerHTML = '<div class="history-item"><span>Aucun schéma à tester</span><strong>Crée d’abord un schéma.</strong></div>';
+    return;
+  }
+  schemas.forEach(schema => schemaTestList.appendChild(createSchemaLibraryCard(schema, true)));
+}
+
+function handleSchemaListAction(event) {
+  const button = event.target.closest('button[data-schema-action]');
+  if (!button) return;
+  event.preventDefault();
+  const schema = getSchemaById(button.dataset.schemaId);
+  if (!schema) return;
+  if (button.dataset.schemaAction === 'test') startSchemaTest(schema.id);
+  if (button.dataset.schemaAction === 'edit') openSchemaEditor(schema.id);
+  if (button.dataset.schemaAction === 'delete') deleteSchema(schema.id);
+}
+
+function createSchemaEditorState(schema = null) {
+  return {
+    schemaId: schema?.id || null,
+    originalRevision: schema?.revision || 0,
+    createdBy: schema?.createdBy || state.currentUser,
+    elements: cloneV5Value(schema?.elements || []),
+    selectedId: null,
+    tool: 'select',
+    color: SCHEMA_COLORS[0],
+    fillMode: 'none',
+    status: ''
+  };
+}
+
+function openSchemaEditor(schemaId = null) {
+  const schema = schemaId ? getSchemaById(schemaId) : null;
+  if (schema && !canEditSchema(schema)) {
+    alert('Seule la personne qui a créé ce schéma peut le modifier.');
+    return;
+  }
+  schemaEditorState = createSchemaEditorState(schema);
+  if (schemaTitleInput) schemaTitleInput.value = schema?.title || '';
+  if (schemaExplanationInput) schemaExplanationInput.value = schema?.explanation || '';
+  if (schemaTextInput) schemaTextInput.value = '';
+  if (schemaAnswerInput) schemaAnswerInput.value = '';
+  goToPage('schema-editor');
+}
+
+function getSchemaEditorSelectedElement() {
+  if (!schemaEditorState?.selectedId) return null;
+  return schemaEditorState.elements.find(element => element.id === schemaEditorState.selectedId) || null;
+}
+
+function getSchemaToolLabel(tool) {
+  return {
+    select: 'Déplacer',
+    rect: 'Rectangle',
+    ellipse: 'Cercle / ellipse',
+    line: 'Ligne',
+    arrow: 'Flèche',
+    text: 'Texte',
+    answer: 'Case-réponse'
+  }[tool] || 'Déplacer';
+}
+
+function setSchemaEditorStatus(message = '') {
+  if (!schemaEditorState) return;
+  schemaEditorState.status = message;
+  if (schemaEditorStatus) schemaEditorStatus.textContent = message || 'Choisis un outil, puis place ou dessine dans la zone. Les cases-réponses peuvent être placées n’importe où.';
+}
+
+function renderSchemaEditor() {
+  if (!schemaEditorState) return;
+  const selected = getSchemaEditorSelectedElement();
+  if (schemaEditorHeading) schemaEditorHeading.textContent = schemaEditorState.schemaId ? 'Modifier un schéma' : 'Créer un schéma';
+  if (schemaDeleteButton) schemaDeleteButton.classList.toggle('hidden', !schemaEditorState.schemaId);
+  if (schemaDeleteElementButton) schemaDeleteElementButton.disabled = !selected;
+  if (schemaFillMode) schemaFillMode.value = schemaEditorState.fillMode;
+  if (schemaToolButtons) {
+    schemaToolButtons.querySelectorAll('[data-schema-tool]').forEach(button => {
+      button.classList.toggle('active', button.dataset.schemaTool === schemaEditorState.tool);
+    });
+  }
+  if (schemaColorButtons) {
+    schemaColorButtons.querySelectorAll('[data-schema-color]').forEach(button => {
+      button.classList.toggle('active', button.dataset.schemaColor === schemaEditorState.color);
+    });
+  }
+  renderSchemaSvg(schemaEditorCanvas, schemaEditorState.elements, {
+    markerId: 'schema-editor-arrowhead',
+    selectedId: schemaEditorState.selectedId,
+    showAnswers: true,
+    showHandles: true
+  });
+  const defaultStatus = selected
+    ? 'Élément sélectionné : déplace-le directement ; utilise le petit rond pour le redimensionner.'
+    : 'Outil actif : ' + getSchemaToolLabel(schemaEditorState.tool) + '.';
+  if (schemaEditorStatus) schemaEditorStatus.textContent = schemaEditorState.status || defaultStatus;
+}
+
+function getSchemaElementMarkup(element, options = {}) {
+  const selectedClass = options.selectedId === element.id ? ' selected' : '';
+  const data = ' data-schema-element="' + escapeHtml(element.id) + '"';
+  const groupStart = '<g class="schema-svg-element' + selectedClass + '"' + data + '>';
+  const groupEnd = '</g>';
+  const style = ' stroke="' + escapeHtml(element.stroke) + '" stroke-width="' + element.strokeWidth + '"';
+  if (element.type === 'rect') {
+    return groupStart + '<rect x="' + element.x + '" y="' + element.y + '" width="' + element.width + '" height="' + element.height + '" rx="10" fill="' + escapeHtml(element.fill) + '" fill-opacity="' + element.fillOpacity + '"' + style + '></rect>' + groupEnd;
+  }
+  if (element.type === 'ellipse') {
+    return groupStart + '<ellipse cx="' + (element.x + element.width / 2) + '" cy="' + (element.y + element.height / 2) + '" rx="' + (element.width / 2) + '" ry="' + (element.height / 2) + '" fill="' + escapeHtml(element.fill) + '" fill-opacity="' + element.fillOpacity + '"' + style + '></ellipse>' + groupEnd;
+  }
+  if (element.type === 'line' || element.type === 'arrow') {
+    const marker = element.type === 'arrow' ? ' marker-end="url(#' + options.markerId + ')"' : '';
+    return groupStart
+      + '<line class="schema-line-hitbox" x1="' + element.x1 + '" y1="' + element.y1 + '" x2="' + element.x2 + '" y2="' + element.y2 + '"></line>'
+      + '<line x1="' + element.x1 + '" y1="' + element.y1 + '" x2="' + element.x2 + '" y2="' + element.y2 + '" fill="none"' + style + marker + '></line>'
+      + groupEnd;
+  }
+  if (element.type === 'text') {
+    return groupStart + '<text x="' + element.x + '" y="' + element.y + '" fill="' + escapeHtml(element.stroke) + '" font-size="' + element.fontSize + '" font-weight="700">' + escapeHtml(element.text) + '</text>' + groupEnd;
+  }
+  const answerText = options.showAnswers
+    ? truncateSchemaText(element.answers?.[0] || 'Réponse', 28)
+    : '';
+  return groupStart
+    + '<rect class="schema-answer-box" x="' + element.x + '" y="' + element.y + '" width="' + element.width + '" height="' + element.height + '" rx="10" fill="' + escapeHtml(element.fill) + '" fill-opacity="' + element.fillOpacity + '"' + style + '></rect>'
+    + (answerText ? '<text x="' + (element.x + 12) + '" y="' + (element.y + element.height / 2 + 7) + '" fill="' + escapeHtml(element.stroke) + '" font-size="20" font-weight="700">' + escapeHtml(answerText) + '</text>' : '')
+    + groupEnd;
+}
+
+function truncateSchemaText(value, limit) {
+  const text = String(value || '');
+  return text.length > limit ? text.slice(0, Math.max(1, limit - 1)) + '…' : text;
+}
+
+function getSchemaEditorHandleMarkup(element) {
+  if (!element) return '';
+  if (element.type === 'line' || element.type === 'arrow') {
+    return '<g class="schema-editor-handles">'
+      + '<circle class="schema-editor-handle" data-schema-handle="line-start" cx="' + element.x1 + '" cy="' + element.y1 + '" r="11"></circle>'
+      + '<circle class="schema-editor-handle" data-schema-handle="line-end" cx="' + element.x2 + '" cy="' + element.y2 + '" r="11"></circle>'
+      + '</g>';
+  }
+  if (element.type === 'text') return '';
+  return '<g class="schema-editor-handles"><circle class="schema-editor-handle" data-schema-handle="resize" cx="' + (element.x + element.width) + '" cy="' + (element.y + element.height) + '" r="11"></circle></g>';
+}
+
+function renderSchemaSvg(canvas, elements, options = {}) {
+  if (!canvas) return;
+  const markerId = options.markerId || 'schema-arrowhead';
+  const gridId = markerId + '-grid';
+  const selected = options.showHandles ? elements.find(element => element.id === options.selectedId) : null;
+  canvas.innerHTML = '<defs>'
+    + '<pattern id="' + gridId + '" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" stroke-opacity="0.08" stroke-width="1"></path></pattern>'
+    + '<marker id="' + markerId + '" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"></path></marker>'
+    + '</defs>'
+    + '<rect class="schema-canvas-background" x="0" y="0" width="' + SCHEMA_CANVAS_WIDTH + '" height="' + SCHEMA_CANVAS_HEIGHT + '" fill="url(#' + gridId + ')"></rect>'
+    + elements.map(element => getSchemaElementMarkup(element, { ...options, markerId })).join('')
+    + getSchemaEditorHandleMarkup(selected);
+}
+
+function getSchemaEditorPoint(event) {
+  const box = schemaEditorCanvas.getBoundingClientRect();
+  return {
+    x: clampSchemaNumber((event.clientX - box.left) * SCHEMA_CANVAS_WIDTH / box.width, 0, SCHEMA_CANVAS_WIDTH, 0),
+    y: clampSchemaNumber((event.clientY - box.top) * SCHEMA_CANVAS_HEIGHT / box.height, 0, SCHEMA_CANVAS_HEIGHT, 0)
+  };
+}
+
+function createSchemaEditorElementId() {
+  return createEventId('schema-element');
+}
+
+function getSchemaEditorShapeStyle() {
+  return {
+    stroke: schemaEditorState.color,
+    fill: schemaEditorState.color,
+    fillOpacity: SCHEMA_FILL_OPACITIES[schemaEditorState.fillMode] ?? 0,
+    strokeWidth: 4
+  };
+}
+
+function addSchemaEditorText(point) {
+  const text = normalizeSchemaText(schemaTextInput?.value, 120);
+  if (!text) {
+    setSchemaEditorStatus('Écris le texte à placer avant de toucher le schéma.');
+    return;
+  }
+  if (schemaEditorState.elements.length >= SCHEMA_MAX_ELEMENTS) {
+    setSchemaEditorStatus('Ce schéma a déjà atteint la limite de ' + SCHEMA_MAX_ELEMENTS + ' éléments.');
+    return;
+  }
+  const element = {
+    id: createSchemaEditorElementId(),
+    type: 'text',
+    x: point.x,
+    y: Math.max(20, point.y),
+    text,
+    stroke: schemaEditorState.color,
+    fontSize: 24
+  };
+  schemaEditorState.elements.push(element);
+  schemaEditorState.selectedId = element.id;
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function addSchemaEditorAnswer(point) {
+  const answers = normalizeSchemaAnswers(schemaAnswerInput?.value);
+  if (!answers.length) {
+    setSchemaEditorStatus('Écris au moins une réponse attendue. Utilise ; pour accepter plusieurs formulations.');
+    return;
+  }
+  if (schemaEditorState.elements.filter(element => element.type === 'answer').length >= SCHEMA_MAX_ANSWER_BOXES) {
+    setSchemaEditorStatus('Ce schéma a déjà atteint la limite de ' + SCHEMA_MAX_ANSWER_BOXES + ' cases-réponses.');
+    return;
+  }
+  if (schemaEditorState.elements.length >= SCHEMA_MAX_ELEMENTS) {
+    setSchemaEditorStatus('Ce schéma a déjà atteint la limite de ' + SCHEMA_MAX_ELEMENTS + ' éléments.');
+    return;
+  }
+  const width = 220;
+  const height = 64;
+  const style = getSchemaEditorShapeStyle();
+  const element = {
+    id: createSchemaEditorElementId(),
+    type: 'answer',
+    x: clampSchemaNumber(point.x - width / 2, 0, SCHEMA_CANVAS_WIDTH - width, 0),
+    y: clampSchemaNumber(point.y - height / 2, 0, SCHEMA_CANVAS_HEIGHT - height, 0),
+    width,
+    height,
+    answers,
+    ...style
+  };
+  schemaEditorState.elements.push(element);
+  schemaEditorState.selectedId = element.id;
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function beginSchemaDrawing(point) {
+  if (!schemaEditorState || schemaEditorState.elements.length >= SCHEMA_MAX_ELEMENTS) {
+    setSchemaEditorStatus('Ce schéma a déjà atteint la limite de ' + SCHEMA_MAX_ELEMENTS + ' éléments.');
+    return;
+  }
+  const style = getSchemaEditorShapeStyle();
+  const id = createSchemaEditorElementId();
+  const type = schemaEditorState.tool;
+  let element = null;
+  if (type === 'rect' || type === 'ellipse') {
+    element = { id, type, x: point.x, y: point.y, width: 32, height: 28, ...style };
+  }
+  if (type === 'line' || type === 'arrow') {
+    element = { id, type, x1: point.x, y1: point.y, x2: point.x, y2: point.y, stroke: style.stroke, strokeWidth: style.strokeWidth };
+  }
+  if (!element) return;
+  schemaEditorState.elements.push(element);
+  schemaEditorState.selectedId = element.id;
+  schemaEditorPointer = {
+    mode: 'draw',
+    elementId: element.id,
+    start: point,
+    initial: cloneV5Value(element)
+  };
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function startSchemaEditorPointer(event) {
+  if (!schemaEditorState || !schemaEditorCanvas) return;
+  event.preventDefault();
+  const point = getSchemaEditorPoint(event);
+  const handle = event.target?.dataset?.schemaHandle;
+  const target = event.target && typeof event.target.closest === 'function' ? event.target.closest('[data-schema-element]') : null;
+  const elementId = target?.dataset?.schemaElement;
+  if (schemaEditorState.tool === 'select') {
+    const selected = getSchemaEditorSelectedElement();
+    if (handle && selected) {
+      schemaEditorPointer = {
+        mode: handle,
+        elementId: selected.id,
+        start: point,
+        initial: cloneV5Value(selected)
+      };
+    } else if (elementId) {
+      const element = schemaEditorState.elements.find(item => item.id === elementId);
+      if (element) {
+        schemaEditorState.selectedId = element.id;
+        schemaEditorPointer = {
+          mode: 'move',
+          elementId: element.id,
+          start: point,
+          initial: cloneV5Value(element)
+        };
+      }
+    } else {
+      schemaEditorState.selectedId = null;
+      schemaEditorState.status = '';
+      renderSchemaEditor();
+    }
+  } else if (schemaEditorState.tool === 'text') {
+    addSchemaEditorText(point);
+  } else if (schemaEditorState.tool === 'answer') {
+    addSchemaEditorAnswer(point);
+  } else {
+    beginSchemaDrawing(point);
+  }
+  if (schemaEditorCanvas.setPointerCapture) {
+    try {
+      schemaEditorCanvas.setPointerCapture(event.pointerId);
+    } catch (error) {
+      console.debug('Capture de pointeur indisponible', error);
+    }
+  }
+}
+
+function updateSchemaEditorPointer(event) {
+  if (!schemaEditorPointer || !schemaEditorState) return;
+  const point = getSchemaEditorPoint(event);
+  const element = schemaEditorState.elements.find(item => item.id === schemaEditorPointer.elementId);
+  if (!element) return;
+  const initial = schemaEditorPointer.initial;
+  const deltaX = point.x - schemaEditorPointer.start.x;
+  const deltaY = point.y - schemaEditorPointer.start.y;
+  if (schemaEditorPointer.mode === 'draw') {
+    if (element.type === 'rect' || element.type === 'ellipse') {
+      const width = Math.max(32, Math.abs(point.x - schemaEditorPointer.start.x));
+      const height = Math.max(28, Math.abs(point.y - schemaEditorPointer.start.y));
+      element.width = Math.min(width, SCHEMA_CANVAS_WIDTH);
+      element.height = Math.min(height, SCHEMA_CANVAS_HEIGHT);
+      element.x = clampSchemaNumber(Math.min(point.x, schemaEditorPointer.start.x), 0, SCHEMA_CANVAS_WIDTH - element.width, 0);
+      element.y = clampSchemaNumber(Math.min(point.y, schemaEditorPointer.start.y), 0, SCHEMA_CANVAS_HEIGHT - element.height, 0);
+    } else {
+      element.x2 = point.x;
+      element.y2 = point.y;
+    }
+  }
+  if (schemaEditorPointer.mode === 'move') {
+    if (element.type === 'line' || element.type === 'arrow') {
+      element.x1 = clampSchemaNumber(initial.x1 + deltaX, 0, SCHEMA_CANVAS_WIDTH, initial.x1);
+      element.y1 = clampSchemaNumber(initial.y1 + deltaY, 0, SCHEMA_CANVAS_HEIGHT, initial.y1);
+      element.x2 = clampSchemaNumber(initial.x2 + deltaX, 0, SCHEMA_CANVAS_WIDTH, initial.x2);
+      element.y2 = clampSchemaNumber(initial.y2 + deltaY, 0, SCHEMA_CANVAS_HEIGHT, initial.y2);
+    } else if (element.type === 'text') {
+      element.x = clampSchemaNumber(initial.x + deltaX, 0, SCHEMA_CANVAS_WIDTH, initial.x);
+      element.y = clampSchemaNumber(initial.y + deltaY, 20, SCHEMA_CANVAS_HEIGHT, initial.y);
+    } else {
+      element.x = clampSchemaNumber(initial.x + deltaX, 0, SCHEMA_CANVAS_WIDTH - initial.width, initial.x);
+      element.y = clampSchemaNumber(initial.y + deltaY, 0, SCHEMA_CANVAS_HEIGHT - initial.height, initial.y);
+    }
+  }
+  if (schemaEditorPointer.mode === 'resize' && element.type !== 'text') {
+    element.width = clampSchemaNumber(point.x - initial.x, 32, SCHEMA_CANVAS_WIDTH - initial.x, initial.width);
+    element.height = clampSchemaNumber(point.y - initial.y, 28, SCHEMA_CANVAS_HEIGHT - initial.y, initial.height);
+  }
+  if (schemaEditorPointer.mode === 'line-start' && (element.type === 'line' || element.type === 'arrow')) {
+    element.x1 = point.x;
+    element.y1 = point.y;
+  }
+  if (schemaEditorPointer.mode === 'line-end' && (element.type === 'line' || element.type === 'arrow')) {
+    element.x2 = point.x;
+    element.y2 = point.y;
+  }
+  renderSchemaEditor();
+}
+
+function stopSchemaEditorPointer(event) {
+  schemaEditorPointer = null;
+  if (schemaEditorCanvas?.hasPointerCapture?.(event.pointerId)) {
+    try {
+      schemaEditorCanvas.releasePointerCapture(event.pointerId);
+    } catch (error) {
+      console.debug('Libération de pointeur indisponible', error);
+    }
+  }
+}
+
+function selectSchemaTool(tool) {
+  if (!schemaEditorState) return;
+  schemaEditorState.tool = tool;
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function selectSchemaColor(color) {
+  if (!schemaEditorState || !SCHEMA_COLORS.includes(color)) return;
+  schemaEditorState.color = color;
+  const selected = getSchemaEditorSelectedElement();
+  if (selected) {
+    selected.stroke = color;
+    if (selected.type === 'rect' || selected.type === 'ellipse' || selected.type === 'answer') selected.fill = color;
+  }
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function selectSchemaFillMode(mode) {
+  if (!schemaEditorState || !(mode in SCHEMA_FILL_OPACITIES)) return;
+  schemaEditorState.fillMode = mode;
+  const selected = getSchemaEditorSelectedElement();
+  if (selected && ['rect', 'ellipse', 'answer'].includes(selected.type)) {
+    selected.fill = schemaEditorState.color;
+    selected.fillOpacity = SCHEMA_FILL_OPACITIES[mode];
+  }
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function deleteSelectedSchemaElement() {
+  if (!schemaEditorState?.selectedId) return;
+  schemaEditorState.elements = schemaEditorState.elements.filter(element => element.id !== schemaEditorState.selectedId);
+  schemaEditorState.selectedId = null;
+  schemaEditorState.status = '';
+  renderSchemaEditor();
+}
+
+function saveSchemaEditor() {
+  if (!schemaEditorState || !state.currentUser) return;
+  const title = normalizeSchemaText(schemaTitleInput?.value, 120);
+  const explanation = normalizeSchemaExplanation(schemaExplanationInput?.value);
+  const elements = schemaEditorState.elements
+    .map((element, index) => normalizeSchemaElement(element, index))
+    .filter(Boolean);
+  const answerCount = elements.filter(element => element.type === 'answer' && element.answers.length).length;
+  if (!title) {
+    setSchemaEditorStatus('Ajoute un titre avant d’enregistrer.');
+    schemaTitleInput?.focus();
+    return;
+  }
+  if (!explanation) {
+    setSchemaEditorStatus('Ajoute le texte explicatif qui sera affiché pendant le test.');
+    schemaExplanationInput?.focus();
+    return;
+  }
+  if (!elements.length) {
+    setSchemaEditorStatus('Ajoute au moins une forme, ligne, flèche, case ou texte.');
+    return;
+  }
+  if (!answerCount) {
+    setSchemaEditorStatus('Ajoute au moins une case-réponse contenant une réponse attendue.');
+    return;
+  }
+  const now = new Date().toISOString();
+  const schemas = getSchemas();
+  let creationPoints = Math.ceil(answerCount / 2);
+  if (schemaEditorState.schemaId) {
+    const existing = getSchemaById(schemaEditorState.schemaId);
+    if (!existing || !canEditSchema(existing)) {
+      setSchemaEditorStatus('Ce schéma ne peut plus être modifié depuis ce profil.');
+      return;
+    }
+    creationPoints = existing.creationPoints;
+    const index = schemas.findIndex(schema => schema.id === existing.id);
+    schemas[index] = normalizeSchema({
+      ...existing,
+      title,
+      explanation,
+      elements,
+      creationPoints,
+      revision: existing.revision + 1,
+      updatedAt: now,
+      results: cloneV5Value(existing.results)
+    }, index);
+  } else {
+    schemas.push(normalizeSchema({
+      id: createEventId('schema'),
+      title,
+      explanation,
+      createdBy: state.currentUser,
+      createdAt: now,
+      updatedAt: now,
+      revision: 1,
+      creationPoints,
+      elements,
+      results: {}
+    }, schemas.length));
+  }
+  state.schemas = normalizeSchemas(schemas, state.deleted?.schemas || {});
+  saveState({ shared: true });
+  const feedback = schemaEditorState.schemaId
+    ? 'Schéma mis à jour. Les meilleurs scores devront être recalculés.'
+    : 'Schéma enregistré : +' + creationPoints + ' point' + (creationPoints > 1 ? 's' : '') + ' pour sa création.';
+  schemaEditorState = null;
+  renderApp();
+  goToPage('schemas');
+  alert(feedback);
+}
+
+function deleteSchema(schemaId) {
+  const schema = getSchemaById(schemaId);
+  if (!schema || !canEditSchema(schema)) return;
+  if (!confirm('Supprimer définitivement le schéma « ' + schema.title + ' » ?')) return;
+  state.schemas = getSchemas().filter(item => item.id !== schema.id);
+  markDeleted('schemas', schema.id);
+  saveState({ shared: true });
+  if (schemaEditorState?.schemaId === schema.id) schemaEditorState = null;
+  renderApp();
+  goToPage('schemas');
+}
+
+function startSchemaTest(schemaId) {
+  const schema = getSchemaById(schemaId);
+  if (!schema) return;
+  schemaTestSession = {
+    id: createEventId('schema-attempt'),
+    schemaId: schema.id,
+    revision: schema.revision,
+    startedAt: Date.now(),
+    answers: {},
+    status: ''
+  };
+  goToPage('schema-test');
+}
+
+function getSchemaTestAnswerState(elementId) {
+  if (!schemaTestSession.answers[elementId]) {
+    schemaTestSession.answers[elementId] = {
+      value: '',
+      checked: false,
+      firstCorrect: null,
+      status: 'pending',
+      revealed: false
+    };
+  }
+  return schemaTestSession.answers[elementId];
+}
+
+function renderSchemaTestSession() {
+  if (!schemaTestSession) {
+    goToPage('schema-tests');
+    return;
+  }
+  const schema = getSchemaById(schemaTestSession.schemaId);
+  if (!schema) {
+    schemaTestSession = null;
+    goToPage('schema-tests');
+    return;
+  }
+  if (schemaTestHeading) schemaTestHeading.textContent = schema.title;
+  if (schemaTestExplanation) schemaTestExplanation.textContent = schema.explanation || 'Aucun texte explicatif pour ce schéma.';
+  renderSchemaSvg(schemaTestCanvas, schema.elements, {
+    markerId: 'schema-test-arrowhead',
+    showAnswers: false
+  });
+  renderSchemaTestInputs(schema);
+  if (schemaTestStatus) schemaTestStatus.textContent = schemaTestSession.status || 'Remplis les cases puis valide-les une à une.';
+}
+
+function renderSchemaTestInputs(schema) {
+  if (!schemaTestInputs || !schemaTestSession) return;
+  const answerElements = getSchemaAnswerElements(schema);
+  schemaTestInputs.innerHTML = '';
+  answerElements.forEach(element => {
+    const answerState = getSchemaTestAnswerState(element.id);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'schema-answer-input-wrap';
+    wrapper.classList.toggle('correct', answerState.status === 'correct');
+    wrapper.classList.toggle('incorrect', answerState.status === 'incorrect');
+    wrapper.style.left = (element.x / SCHEMA_CANVAS_WIDTH * 100) + '%';
+    wrapper.style.top = (element.y / SCHEMA_CANVAS_HEIGHT * 100) + '%';
+    wrapper.style.width = (element.width / SCHEMA_CANVAS_WIDTH * 100) + '%';
+    wrapper.style.height = (element.height / SCHEMA_CANVAS_HEIGHT * 100) + '%';
+
+    const row = document.createElement('div');
+    row.className = 'schema-answer-input-row';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = answerState.value;
+    input.placeholder = 'Réponse';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.dataset.schemaAnswerId = element.id;
+    input.setAttribute('aria-label', 'Réponse pour une case du schéma');
+    const validateButton = document.createElement('button');
+    validateButton.type = 'button';
+    validateButton.className = 'schema-answer-check';
+    validateButton.dataset.schemaTestAction = 'validate';
+    validateButton.dataset.schemaAnswerId = element.id;
+    validateButton.title = 'Vérifier cette réponse';
+    validateButton.setAttribute('aria-label', 'Vérifier cette réponse');
+    validateButton.textContent = '✓';
+    row.append(input, validateButton);
+    wrapper.appendChild(row);
+
+    if (answerState.status === 'incorrect' && !answerState.revealed) {
+      const revealButton = document.createElement('button');
+      revealButton.type = 'button';
+      revealButton.className = 'schema-show-answer';
+      revealButton.dataset.schemaTestAction = 'reveal';
+      revealButton.dataset.schemaAnswerId = element.id;
+      revealButton.textContent = 'Afficher la réponse';
+      wrapper.appendChild(revealButton);
+    }
+    if (answerState.revealed) {
+      const expected = document.createElement('span');
+      expected.className = 'schema-expected-answer';
+      expected.textContent = 'Réponse : ' + element.answers.join(' / ');
+      wrapper.appendChild(expected);
+    }
+    schemaTestInputs.appendChild(wrapper);
   });
 }
 
-function updateWorkTimerDisplay() {
-  if (!workTimerDisplay) return;
-  workTimerDisplay.textContent = formatDuration(workTimerSeconds);
+function normalizeSchemaComparableAnswer(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
-function showWorkHistory() {
-  workTimerCard.classList.add('hidden');
-  workNoteCard.classList.add('hidden');
-  renderWorkHistory();
+function isCorrectSchemaAnswer(value, expectedAnswers) {
+  const normalized = normalizeSchemaComparableAnswer(value);
+  return Boolean(normalized) && expectedAnswers.some(answer => normalizeSchemaComparableAnswer(answer) === normalized);
 }
 
-function startWorkTimer() {
-  if (isWorkTimerRunning) return;
-  currentWorkSession = { duration: workTimerSeconds, finished: false };
-  workTimerStatus.textContent = 'Compteur actif';
-  workTimerStart.classList.add('hidden');
-  workTimerPause.classList.remove('hidden');
-  isWorkTimerRunning = true;
-  workTimerInterval = setInterval(() => {
-    workTimerSeconds += 1;
-    currentWorkSession.duration = workTimerSeconds;
-    updateWorkTimerDisplay();
-  }, 1000);
+function updateSchemaTestInput(event) {
+  const input = event.target.closest('input[data-schema-answer-id]');
+  if (!input || !schemaTestSession) return;
+  const answerState = getSchemaTestAnswerState(input.dataset.schemaAnswerId);
+  answerState.value = input.value;
 }
 
-function pauseWorkTimer() {
-  if (!isWorkTimerRunning) return;
-  clearInterval(workTimerInterval);
-  workTimerInterval = null;
-  isWorkTimerRunning = false;
-  workTimerPause.classList.add('hidden');
-  workTimerStart.classList.remove('hidden');
-  workTimerStatus.textContent = 'En pause';
-}
-
-function stopWorkTimer() {
-  if (workTimerInterval) clearInterval(workTimerInterval);
-  workTimerInterval = null;
-  isWorkTimerRunning = false;
-  currentWorkSession = currentWorkSession || { duration: workTimerSeconds, finished: false };
-  currentWorkSession.duration = workTimerSeconds;
-  currentWorkSession.finished = true;
-  workTimerStart.classList.remove('hidden');
-  workTimerPause.classList.add('hidden');
-  workTimerStatus.textContent = workTimerSeconds > 0 ? `Terminé : ${formatDuration(workTimerSeconds)}. Ajoute une note.` : 'Aucun travail enregistré.';
-  workNoteCard.classList.remove('hidden');
-  workNoteText.value = '';
-}
-
-function saveWorkNote(sendToOther) {
-  if (!currentWorkSession) {
-    currentWorkSession = { duration: workTimerSeconds, finished: true };
+function validateSchemaTestAnswer(answerId) {
+  const schema = getSchemaById(schemaTestSession?.schemaId);
+  const element = getSchemaAnswerElements(schema).find(item => item.id === answerId);
+  if (!schema || !element) return;
+  const answerState = getSchemaTestAnswerState(answerId);
+  if (!answerState.value.trim()) {
+    schemaTestSession.status = 'Écris une réponse avant de la vérifier.';
+    if (schemaTestStatus) schemaTestStatus.textContent = schemaTestSession.status;
+    return;
   }
-  if (!currentWorkSession) return;
-  const user = getUser(state.currentUser);
-  if (!user.workHistory) user.workHistory = [];
-  const note = workNoteText.value.trim();
-  const entryTimestamp = new Date().toISOString();
-  const entry = {
-    id: createEventId('work'),
-    date: entryTimestamp,
-    createdAt: entryTimestamp,
-    updatedAt: entryTimestamp,
-    duration: currentWorkSession.duration,
-    note,
-    sentToOther: sendToOther,
-    createdBy: state.currentUser,
-    shared: sendToOther
+  const correct = isCorrectSchemaAnswer(answerState.value, element.answers);
+  if (answerState.firstCorrect === null) answerState.firstCorrect = correct;
+  answerState.checked = true;
+  answerState.status = correct ? 'correct' : 'incorrect';
+  answerState.revealed = false;
+  schemaTestSession.status = correct
+    ? 'Bonne réponse.'
+    : 'Ce n’est pas encore la bonne réponse : tu peux réessayer.';
+  renderSchemaTestSession();
+}
+
+function revealSchemaTestAnswer(answerId) {
+  const answerState = getSchemaTestAnswerState(answerId);
+  answerState.revealed = true;
+  schemaTestSession.status = 'La réponse est affichée ; elle ne compte pas comme une réussite au premier essai.';
+  renderSchemaTestSession();
+}
+
+function finishSchemaTest() {
+  const schema = getSchemaById(schemaTestSession?.schemaId);
+  if (!schema || !schemaTestSession) return;
+  const answerElements = getSchemaAnswerElements(schema);
+  const uncheckedCount = answerElements.filter(element => !getSchemaTestAnswerState(element.id).checked).length;
+  if (uncheckedCount && !confirm('Il reste ' + uncheckedCount + ' case(s) non vérifiée(s). Les cases non validées compteront comme fausses. Terminer quand même ?')) return;
+  if (schema.revision !== schemaTestSession.revision) {
+    alert('Le schéma a été modifié pendant le test. Recommence-le pour obtenir un score valable.');
+    schemaTestSession = null;
+    goToPage('schema-tests');
+    return;
+  }
+  const correct = answerElements.filter(element => getSchemaTestAnswerState(element.id).firstCorrect === true).length;
+  const total = answerElements.length;
+  const score = total ? Math.round(correct / total * 100) : 0;
+  const currentResult = getSchemaResult(schema, state.currentUser);
+  const bestScores = cloneV5Value(currentResult.bestScores || {});
+  const revisionKey = String(schema.revision);
+  const previousBest = Math.max(
+    Number(bestScores[revisionKey]) || 0,
+    currentResult.revision === schema.revision ? currentResult.bestScore : 0
+  );
+  bestScores[revisionKey] = Math.max(previousBest, score);
+  const currentAttempts = getSchemaAttemptEntriesForDay(schema, state.currentUser, getToday());
+  const rewardEligible = currentAttempts.length < 3;
+  const rewardAttempts = cloneV5Value(currentResult.rewardAttempts);
+  if (rewardEligible) {
+    if (!rewardAttempts[getToday()]) rewardAttempts[getToday()] = {};
+    rewardAttempts[getToday()][schemaTestSession.id] = {
+      id: schemaTestSession.id,
+      date: getToday(),
+      completedAt: Date.now(),
+      score,
+      correct,
+      total,
+      points: correct,
+      revision: schema.revision
+    };
+  }
+  schema.results = schema.results || {};
+  schema.results[state.currentUser] = {
+    ...currentResult,
+    bestScore: bestScores[revisionKey],
+    bestScores,
+    revision: schema.revision,
+    lastScore: score,
+    lastCompletedAt: Date.now(),
+    rewardAttempts
   };
-  user.workHistory.unshift(entry);
-  if (sendToOther) {
-    const other = getUser(getOtherUserId());
-    if (!other.workHistory) other.workHistory = [];
-    other.workHistory.unshift({
-      id: createEventId('work-received'),
-      date: entryTimestamp,
-      createdAt: entryTimestamp,
-      updatedAt: entryTimestamp,
-      duration: currentWorkSession.duration,
-      note,
-      sentFrom: state.currentUser,
-      received: true,
-      shared: true,
-      createdBy: state.currentUser
-    });
-  }
-  saveState();
-  currentWorkSession = null;
-  workTimerSeconds = 0;
-  updateWorkTimerDisplay();
-  workTimerCard.classList.add('hidden');
-  workNoteCard.classList.add('hidden');
-  workTimerStatus.textContent = sendToOther ? 'Note envoyée à l’autre.' : 'Note gardée pour moi.';
-  renderWorkHistory();
+  saveState({ shared: true });
+  const pointsMessage = rewardEligible
+    ? '+' + correct + ' point' + (correct > 1 ? 's' : '') + ' de schéma.'
+    : 'Le quota de trois essais avec points est atteint pour ce schéma aujourd’hui.';
+  schemaTestSession = null;
+  renderApp();
+  goToPage('schema-tests');
+  alert('Score : ' + score + '% (' + correct + '/' + total + ' du premier coup). ' + pointsMessage);
 }
 
 function renderProfile() {
@@ -2722,7 +3700,7 @@ function renderProfile() {
   setText(myTotalQuizzes, displayG.totalQuizzes);
   setText(mySuccessRate, `${displayG.successRate}%`);
   setText(myTotalReading, `${displayG.totalReading} min`);
-  setText(myTotalWork, formatReadingSeconds(displayG.totalWorkSeconds));
+  setText(mySchemaPoints, displayG.schemaPoints);
   setText(myWeeklyWins, displayG.weeklyWins);
   setText(otherJokers, userR.jokers);
   setText(otherTotalCards, displayR.totalCards);
@@ -2731,7 +3709,7 @@ function renderProfile() {
   setText(otherTotalQuizzes, displayR.totalQuizzes);
   setText(otherSuccessRate, `${displayR.successRate}%`);
   setText(otherTotalReading, `${displayR.totalReading} min`);
-  setText(otherTotalWork, formatReadingSeconds(displayR.totalWorkSeconds));
+  setText(otherSchemaPoints, displayR.schemaPoints);
   setText(otherWeeklyWins, displayR.weeklyWins);
   if (adminSyncCard) {
     adminSyncCard.classList.remove('hidden');
@@ -2778,7 +3756,7 @@ function getProfileDisplayStats(user) {
       totalQuizzes: 0,
       successRate: 0,
       totalReading: 0,
-      totalWorkSeconds: 0,
+      schemaPoints: 0,
       weeklyWins: 0
     };
   }
@@ -2788,7 +3766,7 @@ function getProfileDisplayStats(user) {
   const tests = Array.isArray(user.tests) ? user.tests : [];
   const quizzes = Array.isArray(user.quizzes) ? user.quizzes : [];
   const totalReading = Object.values(readings || {}).reduce((sum, v) => sum + Number(v || 0), 0);
-  const totalWorkSeconds = getWorkSecondsForPeriod(user, { start: null, end: null });
+  const schemaPoints = getSchemaPointsForPeriod(user.name, { start: null, end: null });
   return {
     totalCards: flashcards.length,
     weekCards: baseStats.weekCards,
@@ -2796,7 +3774,7 @@ function getProfileDisplayStats(user) {
     totalQuizzes: quizzes.length,
     successRate: baseStats.successRate,
     totalReading,
-    totalWorkSeconds,
+    schemaPoints,
     weeklyWins: getWeeklyWinCount(user.name)
   };
 }
@@ -2872,21 +3850,6 @@ function isDayInPeriod(dayKey, period = {}) {
   return dayKey >= period.start && dayKey <= period.end;
 }
 
-function getWorkEntryDayKey(entry) {
-  const value = entry?.date || entry?.createdAt || entry?.updatedAt;
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : toLocalDateKey(date);
-}
-
-function getWorkSecondsForPeriod(user, period = {}) {
-  const history = Array.isArray(user?.workHistory) ? user.workHistory : [];
-  return history.reduce((total, entry) => {
-    if (!entry || entry.received || !isDayInPeriod(getWorkEntryDayKey(entry), period)) return total;
-    return total + Math.max(0, Number(entry.duration) || 0);
-  }, 0);
-}
-
 function getWeekPeriodForDay(dayKey = getToday()) {
   const start = getMondayKey(dayKey);
   return { key: start, start, end: addDaysToDateKey(start, 6) };
@@ -2909,19 +3872,19 @@ function getWeeklyWinCount(userId, awards = getWeeklyAwards()) {
   return Object.values(awards).filter(award => award.winner === userId).length;
 }
 
-function getWeeklyCompetitionScore(user, period) {
-  const stats = getPeriodStats(user, period);
+function getWeeklyCompetitionScore(user, period, schemas = getSchemas()) {
+  const stats = getPeriodStats(user, period, schemas);
   const completedTests = (user?.tests || []).filter(test => isDayInPeriod(test.date, period)).length
     + (user?.quizzes || []).filter(quiz => isDayInPeriod(quiz.date, period)).length;
-  return Math.floor(stats.workSeconds / 60)
-    + Math.floor(stats.readingSeconds / 60)
+  return Math.floor(stats.readingSeconds / 60)
     + stats.flashcardsCreated * 3
-    + completedTests * 4;
+    + completedTests * 4
+    + stats.schemaPoints;
 }
 
-function createWeeklyAward(users, period, finalizedAt = Date.now()) {
-  const scoreG = getWeeklyCompetitionScore(users?.G, period);
-  const scoreR = getWeeklyCompetitionScore(users?.R, period);
+function createWeeklyAward(users, period, finalizedAt = Date.now(), schemas = getSchemas()) {
+  const scoreG = getWeeklyCompetitionScore(users?.G, period, schemas);
+  const scoreR = getWeeklyCompetitionScore(users?.R, period, schemas);
   return {
     weekKey: period.key,
     start: period.start,
@@ -2939,9 +3902,10 @@ function finalizeWeeklyAwardDocument(document, period, finalizedAt = Date.now())
     G: deserializeV5User(next.data?.users?.G, 'G'),
     R: deserializeV5User(next.data?.users?.R, 'R')
   };
+  const schemas = v5MapToCollection(next.data?.schemas || {}, 'schema', deserializeV5Schema);
   const awards = normalizeWeeklyAwards(users.G.weeklyAwards);
   if (awards[period.key]) return { document: next, changed: false };
-  awards[period.key] = createWeeklyAward(users, period, finalizedAt);
+  awards[period.key] = createWeeklyAward(users, period, finalizedAt, schemas);
   next.data.users.G.weeklyAwards = awards;
   next.meta.updatedAt = finalizedAt;
   return { document: next, changed: true };
@@ -2985,7 +3949,7 @@ function getQuestionCreatedDay(question) {
   return null;
 }
 
-function getPeriodStats(user, period) {
+function getPeriodStats(user, period, schemas = getSchemas()) {
   const safeUser = user || {};
   const inRange = dayKey => isDayInPeriod(dayKey, period);
 
@@ -3011,15 +3975,18 @@ function getPeriodStats(user, period) {
   }).length;
 
   const quizQuestionsTested = (safeUser.quizzes || []).filter(quiz => inRange(quiz.date)).length;
-  const workSeconds = getWorkSecondsForPeriod(safeUser, period);
+  const schemaCreationPoints = getSchemaCreationPointsForPeriod(safeUser.name, period, schemas);
+  const schemaTestPoints = getSchemaTestPointsForPeriod(safeUser.name, period, schemas);
 
   return {
     readingSeconds,
-    workSeconds,
     flashcardsCreated,
     flashcardsTested,
     quizQuestionsCreated,
     quizQuestionsTested,
+    schemaCreationPoints,
+    schemaTestPoints,
+    schemaPoints: schemaCreationPoints + schemaTestPoints,
     weeklyWins: getWeeklyWinCount(safeUser.name)
   };
 }
@@ -3039,9 +4006,9 @@ function createStatsComparisonCard(title, leftLabel, rightLabel, leftStats, righ
       <strong>${formatReadingSeconds(rightStats.readingSeconds)}</strong>
     </div>
     <div class="stats-compare-grid">
-      <span>Temps de travail</span>
-      <strong>${formatReadingSeconds(leftStats.workSeconds)}</strong>
-      <strong>${formatReadingSeconds(rightStats.workSeconds)}</strong>
+      <span>Points schémas</span>
+      <strong>${leftStats.schemaPoints}</strong>
+      <strong>${rightStats.schemaPoints}</strong>
     </div>
     <div class="stats-compare-grid">
       <span>Flashcards créées</span>
@@ -3219,7 +4186,7 @@ function renderRecap() {
   recap.className = 'recap-section';
   recap.innerHTML = `
     <span>Temps de lecture cette semaine</span><strong>${sumLast7(user.reading)} min</strong>
-    <span>Temps de travail cette semaine</span><strong>${formatReadingSeconds(currentWeekStats.workSeconds)}</strong>
+    <span>Points schémas cette semaine</span><strong>${currentWeekStats.schemaPoints}</strong>
     <span>Flashcards créées cette semaine</span><strong>${user.flashcards.filter(card => getLastDays(7).includes(card.date)).length}</strong>
     <span>Tests réalisés cette semaine</span><strong>${user.tests.filter(test => getLastDays(7).includes(test.date)).length + user.quizzes.filter(quiz => getLastDays(7).includes(quiz.date)).length}</strong>
     <span>Score moyen quiz</span><strong>${averageQuizScore(user)}%</strong>
@@ -4245,39 +5212,62 @@ function attachHandlers() {
     if (!confirmed) return;
     deleteQuizQuestionById(questionId);
   });
-  if (workStartButton) workStartButton.addEventListener('click', (event) => {
+  if (schemaCreateButton) schemaCreateButton.addEventListener('click', (event) => {
     event.preventDefault();
-    workTimerCard.classList.remove('hidden');
-    workNoteCard.classList.add('hidden');
-    workTimerSeconds = 0;
-    updateWorkTimerDisplay();
-    workTimerStatus.textContent = 'Prêt à travailler.';
-    currentWorkSession = null;
-    renderWorkHistory();
+    openSchemaEditor();
   });
-  if (workHistoryButton) workHistoryButton.addEventListener('click', (event) => {
+  if (schemaOpenTestsButton) schemaOpenTestsButton.addEventListener('click', (event) => {
     event.preventDefault();
-    showWorkHistory();
+    goToPage('schema-tests');
   });
-  if (workTimerStart) workTimerStart.addEventListener('click', (event) => {
+  if (schemaLibraryList) schemaLibraryList.addEventListener('click', handleSchemaListAction);
+  if (schemaTestList) schemaTestList.addEventListener('click', handleSchemaListAction);
+  if (schemaToolButtons) schemaToolButtons.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-schema-tool]');
+    if (!button) return;
     event.preventDefault();
-    startWorkTimer();
+    selectSchemaTool(button.dataset.schemaTool);
   });
-  if (workTimerPause) workTimerPause.addEventListener('click', (event) => {
+  if (schemaColorButtons) schemaColorButtons.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-schema-color]');
+    if (!button) return;
     event.preventDefault();
-    pauseWorkTimer();
+    selectSchemaColor(button.dataset.schemaColor);
   });
-  if (workTimerStop) workTimerStop.addEventListener('click', (event) => {
-    event.preventDefault();
-    stopWorkTimer();
+  if (schemaFillMode) schemaFillMode.addEventListener('change', () => {
+    selectSchemaFillMode(schemaFillMode.value);
   });
-  if (workNoteSend) workNoteSend.addEventListener('click', (event) => {
+  if (schemaDeleteElementButton) schemaDeleteElementButton.addEventListener('click', (event) => {
     event.preventDefault();
-    saveWorkNote(true);
+    deleteSelectedSchemaElement();
   });
-  if (workNoteSave) workNoteSave.addEventListener('click', (event) => {
+  if (schemaDeleteButton) schemaDeleteButton.addEventListener('click', (event) => {
     event.preventDefault();
-    saveWorkNote(false);
+    if (schemaEditorState?.schemaId) deleteSchema(schemaEditorState.schemaId);
+  });
+  if (schemaSaveButton) schemaSaveButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    saveSchemaEditor();
+  });
+  if (schemaEditorCanvas) {
+    schemaEditorCanvas.addEventListener('pointerdown', startSchemaEditorPointer);
+    schemaEditorCanvas.addEventListener('pointermove', updateSchemaEditorPointer);
+    schemaEditorCanvas.addEventListener('pointerup', stopSchemaEditorPointer);
+    schemaEditorCanvas.addEventListener('pointercancel', stopSchemaEditorPointer);
+  }
+  if (schemaTestInputs) {
+    schemaTestInputs.addEventListener('input', updateSchemaTestInput);
+    schemaTestInputs.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-schema-test-action]');
+      if (!button) return;
+      event.preventDefault();
+      if (button.dataset.schemaTestAction === 'validate') validateSchemaTestAnswer(button.dataset.schemaAnswerId);
+      if (button.dataset.schemaTestAction === 'reveal') revealSchemaTestAnswer(button.dataset.schemaAnswerId);
+    });
+  }
+  if (schemaFinishTestButton) schemaFinishTestButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    finishSchemaTest();
   });
   startReview.addEventListener('click', startReviewSession);
   finishReview.addEventListener('click', () => {

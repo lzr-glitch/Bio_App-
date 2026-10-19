@@ -1,4 +1,4 @@
-const CACHE_NAME = 'revisio-ibo-cache-v26';
+const CACHE_NAME = 'revisio-ibo-cache-v28';
 const ASSETS = [
   '.',
   'index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   'icon.svg',
   'images/reading.svg',
   'images/flashcards.svg',
+  'images/schemas.svg',
   'images/quiz.svg',
   'images/badge.svg'
 ];

@@ -20,6 +20,8 @@ Application web mobile conçue pour deux utilisatrices qui révisent ensemble ch
 - Création de flashcards avec question, réponse, tags, explication et message
 - Bibliothèque de toutes les cartes avec filtre par tag et tri par date
 - Test de flashcards avec répétition espacée inspirée d’Anki
+- Schémas vectoriels partagés : rectangles, cercles, ellipses, lignes, flèches, textes, couleurs et cases-réponses
+- Test des schémas avec validation case par case, variantes de réponse séparées par « ; », meilleur score personnel et plafond quotidien de points
 - Quiz IBO avec 100 questions intégrées et import d’annales JSON
 - Test mensuel IBO réel, enregistrement du score et jokers automatiques
 - Profil comparatif, statistiques, progression par chapitre, points faibles, badges, récapitulatif hebdomadaire
